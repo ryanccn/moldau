@@ -12,8 +12,6 @@ use which::which_global;
 use crate::models::SpecBin;
 
 pub async fn shims(dest: &Path, force: bool) -> Result<()> {
-    let dest = dest.canonicalize()?;
-
     fs::create_dir_all(&dest).await?;
     let bin_path = which_global("moldau").wrap_err("could not resolve moldau binary in PATH")?;
 
