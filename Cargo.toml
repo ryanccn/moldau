@@ -13,8 +13,6 @@ license = "GPL-3.0-or-later"
 homepage = "https://github.com/ryanccn/moldau"
 repository = "https://github.com/ryanccn/moldau.git"
 
-publish = false
-
 [dependencies]
 base64 = "0.22.1"
 clap = { version = "4.5.35", features = ["derive", "string"] }
