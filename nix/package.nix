@@ -4,7 +4,9 @@
 
 {
   lib,
+  stdenv,
   rustPlatform,
+  installShellFiles,
   self,
   enableLTO ? true,
   enableOptimizeSize ? false,
@@ -31,6 +33,10 @@ rustPlatform.buildRustPackage (finalAttrs: {
     lockFile = ../Cargo.lock;
   };
 
+  nativeBuildInputs = [
+    installShellFiles
+  ];
+
   env =
     lib.optionalAttrs enableLTO {
       CARGO_PROFILE_RELEASE_LTO = "fat";
@@ -43,6 +49,13 @@ rustPlatform.buildRustPackage (finalAttrs: {
       CARGO_PROFILE_RELEASE_STRIP = "symbols";
     };
 
+  postInstall = lib.optionalString (stdenv.buildPlatform.canExecute stdenv.hostPlatform) ''
+    installShellCompletion --cmd ${finalAttrs.pname} \
+      --bash <("$out/bin/${finalAttrs.pname}" completions bash) \
+      --zsh <("$out/bin/${finalAttrs.pname}" completions zsh) \
+      --fish <("$out/bin/${finalAttrs.pname}" completions fish)
+  '';
+
   doCheck = false;
 
   passthru = {
@@ -50,7 +63,7 @@ rustPlatform.buildRustPackage (finalAttrs: {
   };
 
   meta = with lib; {
-    description = "CHANGEME";
+    description = "Modern version manager for Node.js package managers";
     maintainers = with maintainers; [ ryanccn ];
     license = licenses.gpl3Only;
     mainProgram = "moldau";

@@ -5,12 +5,12 @@
 use eyre::{Result, bail};
 use std::{
     env,
-    io::Write as _,
+    io::{self, Write as _},
     path::{Path, PathBuf},
     process::ExitCode as StdExitCode,
 };
 
-use clap::{Parser, Subcommand};
+use clap::{CommandFactory as _, Parser, Subcommand};
 use log::{error, info};
 use owo_colors::{OwoColorize as _, Stream, colors::Blue};
 
@@ -94,6 +94,12 @@ enum Commands {
         #[clap(short, long)]
         all: bool,
     },
+
+    /// Generate shell completions
+    Completions {
+        /// The shell to generate completions for    
+        shell: clap_complete::Shell,
+    },
 }
 
 async fn main_fallible() -> Result<()> {
@@ -175,6 +181,10 @@ async fn main_fallible() -> Result<()> {
 
         Commands::Clean { all } => {
             actions::clean(*all).await?;
+        }
+
+        Commands::Completions { shell } => {
+            clap_complete::generate(*shell, &mut Cli::command(), "moldau", &mut io::stdout());
         }
     }
 
