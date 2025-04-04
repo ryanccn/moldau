@@ -1,0 +1,84 @@
+# SPDX-FileCopyrightText: 2025 Ryan Cao <hello@ryanccn.dev>
+#
+# SPDX-License-Identifier: GPL-3.0-or-later
+
+name: Release
+
+on:
+  push:
+    tags: ["v*.*.*"]
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
+
+    uses: ./.github/workflows/build.yml
+    with:
+      disable-cache: true
+
+  crates-io:
+    name: crates.io
+    needs: build
+
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # ratchet:actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@fcf085fcb4b4b8f63f96906cd713eb52181b5ea4 # ratchet:dtolnay/rust-toolchain@stable
+        with:
+          toolchain: stable
+
+      - name: Publish
+        run: cargo publish
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CRATES_IO_API_TOKEN }}
+
+  github:
+    name: GitHub Releases
+    needs: build
+    permissions:
+      contents: write
+
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # ratchet:actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Download artifacts
+        id: download
+        uses: actions/download-artifact@95815c38cf2ff2164869cbab79da8d1f422bc89e # ratchet:actions/download-artifact@v4
+        with:
+          path: /tmp/artifacts
+
+      - name: Prepare assets
+        env:
+          ARTIFACTS: ${{ steps.download.outputs.download-path }}
+        id: prepare
+        run: |
+          asset_path="/tmp/assets"
+          mkdir -p "$asset_path"
+          for artifact in "$ARTIFACTS"/*/; do
+            basename "$artifact" | \
+              xargs -I {} zip -jr "$asset_path"/{}.zip "$artifact"
+          done
+
+      - name: Create release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          gh release create --draft --verify-tag "$TAG" /tmp/assets/*.zip
