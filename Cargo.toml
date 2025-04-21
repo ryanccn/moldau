@@ -15,7 +15,7 @@ repository = "https://github.com/ryanccn/moldau.git"
 
 [dependencies]
 base64 = "0.22.1"
-clap = { version = "4.5.35", features = ["derive", "string"] }
+clap = { version = "4.5.37", features = ["derive", "string"] }
 clap_complete = "4.5.47"
 color-eyre = { version = "0.6.3", default-features = false }
 env_logger = "0.11.8"
