@@ -2,7 +2,7 @@
 //
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-use owo_colors::{Color, OwoColorize as _, Stream};
+use owo_colors::{Color, OwoColorize as _};
 use std::{fmt, marker::PhantomData};
 
 pub trait LogDisplay {
@@ -29,12 +29,10 @@ macro_rules! impl_fmt_trait {
         $(
             impl<T: $trait, C: Color> $trait for LogDisplayThing<T, C> {
                 fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-                    let backtick = "`"
-                        .if_supports_color(Stream::Stderr, |v| v.dimmed())
-                        .to_string();
+                    let backtick = "`".dimmed().to_string();
 
                     f.write_str(&backtick)?;
-                    <dyn $trait>::fmt(&self.inner.if_supports_color(Stream::Stderr, |v| v.fg::<C>()), f)?;
+                    <dyn $trait>::fmt(&self.inner.fg::<C>(), f)?;
                     f.write_str(&backtick)?;
 
                     Ok(())

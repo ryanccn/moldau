@@ -6,5 +6,12 @@ use std::sync::LazyLock;
 
 use reqwest::Client;
 
-pub static HTTP: LazyLock<Client> =
-    LazyLock::new(|| Client::builder().https_only(true).build().unwrap());
+static USER_AGENT: &str = concat!(env!("CARGO_PKG_NAME"), "/", env!("CARGO_PKG_VERSION"));
+
+pub static HTTP: LazyLock<Client> = LazyLock::new(|| {
+    Client::builder()
+        .https_only(true)
+        .user_agent(USER_AGENT)
+        .build()
+        .unwrap()
+});

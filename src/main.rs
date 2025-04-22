@@ -7,12 +7,12 @@ use std::{
     env,
     io::{self, Write as _},
     path::{Path, PathBuf},
-    process::ExitCode as StdExitCode,
+    process::ExitCode,
 };
 
 use clap::{CommandFactory as _, Parser, Subcommand};
-use log::{error, info};
-use owo_colors::{OwoColorize as _, Stream, colors::Blue};
+use log::info;
+use owo_colors::{OwoColorize as _, colors::Blue};
 
 mod actions;
 mod dirs;
@@ -22,7 +22,7 @@ mod util;
 
 use crate::{
     models::{Spec, SpecBin, SpecVersion},
-    util::LogDisplay as _,
+    util::{ExitCodeError, LogDisplay as _, ToExitCode as _},
 };
 
 #[derive(Parser, Clone, Debug)]
@@ -103,6 +103,23 @@ enum Commands {
 }
 
 async fn main_fallible() -> Result<()> {
+    env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("moldau=info"))
+        .target(env_logger::Target::Pipe(Box::new(anstream::stderr())))
+        .format(|buf, record| {
+            let level_style = buf.default_level_style(record.level());
+            writeln!(
+                buf,
+                "{}{}{}{:#}{} {}",
+                "[".dimmed(),
+                level_style,
+                record.level(),
+                level_style,
+                "]".dimmed(),
+                record.args()
+            )
+        })
+        .init();
+
     color_eyre::install()?;
 
     let mut args = env::args();
@@ -120,10 +137,10 @@ async fn main_fallible() -> Result<()> {
         let success = actions::exec(bin, &args.collect::<Vec<_>>(), None).await?;
 
         if !success {
-            return Err(util::ExitCode::FAILURE.into());
+            return Err(ExitCodeError::FAILURE.into());
         }
 
-        return Err(util::ExitCode::SUCCESS.into());
+        return Err(ExitCodeError::SUCCESS.into());
     }
 
     let cli = Cli::parse();
@@ -132,7 +149,7 @@ async fn main_fallible() -> Result<()> {
         Commands::Exec { bin, args, spec } => {
             let success = actions::exec(*bin, &args[..], spec.as_ref()).await?;
             if !success {
-                return Err(util::ExitCode::FAILURE.into());
+                return Err(ExitCodeError::FAILURE.into());
             }
         }
 
@@ -192,32 +209,6 @@ async fn main_fallible() -> Result<()> {
 }
 
 #[tokio::main]
-async fn main() -> StdExitCode {
-    env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("moldau=info"))
-        .format(|buf, record| {
-            let level_style = buf.default_level_style(record.level());
-
-            writeln!(
-                buf,
-                "{}{}{}{:#}{} {}",
-                "[".if_supports_color(Stream::Stderr, |s| s.dimmed()),
-                level_style,
-                record.level(),
-                level_style,
-                "]".if_supports_color(Stream::Stderr, |s| s.dimmed()),
-                record.args()
-            )
-        })
-        .init();
-
-    if let Err(err) = main_fallible().await {
-        if let Some(code) = err.downcast_ref::<util::ExitCode>() {
-            return code.0;
-        }
-
-        error!("{err:?}");
-        return StdExitCode::FAILURE;
-    }
-
-    return StdExitCode::SUCCESS;
+async fn main() -> ExitCode {
+    main_fallible().await.to_exit_code()
 }

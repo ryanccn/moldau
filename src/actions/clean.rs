@@ -7,7 +7,7 @@ use tokio::fs;
 
 use eyre::Result;
 use log::info;
-use owo_colors::{OwoColorize as _, Stream, colors::Blue};
+use owo_colors::{OwoColorize as _, colors::Blue};
 
 use crate::{dirs, models::SpecName, util::LogDisplay as _};
 
@@ -36,14 +36,10 @@ pub async fn clean(all: bool) -> Result<()> {
 
         info!(
             "removed {} versions of {}{}",
-            cached_versions
-                .len()
-                .if_supports_color(Stream::Stderr, |v| v.green()),
+            cached_versions.len().green(),
             name.log_display::<Blue>(),
             if all {
-                " (including latest)"
-                    .if_supports_color(Stream::Stderr, |v| v.dimmed())
-                    .to_string()
+                " (including latest)".dimmed().to_string()
             } else {
                 String::new()
             }

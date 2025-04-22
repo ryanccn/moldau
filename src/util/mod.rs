@@ -3,9 +3,9 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 mod download;
-mod exit_code;
+mod exit_code_error;
 mod log_display;
 
-pub use download::download;
-pub use exit_code::ExitCode;
-pub use log_display::LogDisplay;
+pub use download::*;
+pub use exit_code_error::*;
+pub use log_display::*;

@@ -11,7 +11,7 @@ use owo_colors::colors::Red;
 
 use crate::{
     models::{Spec, SpecBin, SpecName, SpecVersion},
-    util::{ExitCode, LogDisplay as _},
+    util::{ExitCodeError, LogDisplay as _},
 };
 
 pub async fn exec(bin: SpecBin, args: &[String], spec: Option<&Spec>) -> Result<bool> {
@@ -74,7 +74,7 @@ pub async fn exec(bin: SpecBin, args: &[String], spec: Option<&Spec>) -> Result<
 
     if !status.success() {
         #[expect(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
-        return Err(ExitCode::from(status.code().unwrap_or(1) as u8).into());
+        return Err(ExitCodeError::from(status.code().unwrap_or(1) as u8).into());
     }
 
     Ok(true)
