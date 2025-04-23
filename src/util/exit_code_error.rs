@@ -2,7 +2,7 @@
 //
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-use std::{any::Any, error::Error, fmt, process::ExitCode};
+use std::{error::Error, fmt, process::ExitCode};
 
 #[derive(Debug)]
 pub struct ExitCodeError(pub ExitCode);
@@ -30,12 +30,12 @@ pub trait ToExitCode {
     fn to_exit_code(&self) -> ExitCode;
 }
 
-impl<T, E: fmt::Debug + 'static> ToExitCode for Result<T, E> {
+impl<T> ToExitCode for Result<T, eyre::Report> {
     fn to_exit_code(&self) -> ExitCode {
         match self {
             Ok(_) => ExitCode::SUCCESS,
             Err(err) => {
-                if let Some(code) = (err as &dyn Any).downcast_ref::<ExitCodeError>() {
+                if let Some(code) = err.downcast_ref::<ExitCodeError>() {
                     code.0
                 } else {
                     anstream::eprint!("Error: {err:?}");
