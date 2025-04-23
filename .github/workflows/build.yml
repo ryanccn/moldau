@@ -70,6 +70,7 @@ jobs:
 
       - name: Enable Rust nightly flags
         if: ${{ matrix.toolchain == 'nightly' }}
+        shell: bash
         run: |
           mkdir -p .cargo
           cat << EOF > .cargo/config.toml
