@@ -71,6 +71,7 @@ jobs:
       - name: Enable Rust nightly flags
         if: ${{ matrix.toolchain == 'nightly' }}
         run: |
+          mkdir -p .cargo
           cat << EOF > .cargo/config.toml
           [unstable]
           trim-paths = true
