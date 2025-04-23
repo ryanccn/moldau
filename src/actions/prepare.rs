@@ -22,10 +22,13 @@ use crate::{
 pub async fn prepare(spec: &Spec) -> Result<(PathBuf, HashMap<String, String>)> {
     let cache_versions_dir = dirs::cache().join("versions").join(spec.name.to_string());
 
-    let mut cache_ok_versions = BTreeSet::new();
+    let mut cached_ok_versions = BTreeSet::new();
 
-    if let Ok(mut read_dir) = fs::read_dir(&cache_versions_dir).await {
-        while let Ok(Some(entry)) = read_dir.next_entry().await {
+    // There is no way of knowing if a cached version matches a dist tag
+    if spec.version.dist_tag().is_none() {
+        let mut read_dir = fs::read_dir(&cache_versions_dir).await?;
+
+        while let Some(entry) = read_dir.next_entry().await? {
             if let Ok(this_version) = semver::Version::parse(&entry.file_name().to_string_lossy()) {
                 if match &spec.version {
                     SpecVersion::Exact(version) => {
@@ -33,18 +36,15 @@ pub async fn prepare(spec: &Spec) -> Result<(PathBuf, HashMap<String, String>)> 
                         this_version.cmp_precedence(version).is_eq()
                     }
                     SpecVersion::SemverReq(req) => req.matches(&this_version),
-                    SpecVersion::DistTag(_) => {
-                        // There is no way of knowing if a cached version matches a dist tag
-                        false
-                    }
+                    SpecVersion::DistTag(_) => false,
                 } {
-                    cache_ok_versions.insert(this_version);
+                    cached_ok_versions.insert(this_version);
                 }
             }
         }
     }
 
-    if let Some(cache_ok_version) = cache_ok_versions.last() {
+    if let Some(cache_ok_version) = cached_ok_versions.last() {
         let cache_dir = cache_versions_dir.join(cache_ok_version.to_string());
 
         let package_json = fs::read(cache_dir.join("package.json")).await?;

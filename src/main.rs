@@ -104,7 +104,6 @@ enum Commands {
 
 async fn main_fallible() -> Result<()> {
     env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("moldau=info"))
-        .target(env_logger::Target::Pipe(Box::new(anstream::stderr())))
         .format(|buf, record| {
             let level_style = buf.default_level_style(record.level());
             writeln!(
@@ -125,14 +124,8 @@ async fn main_fallible() -> Result<()> {
     let mut args = env::args();
     if let Some(bin) = args.next().and_then(|argv0| {
         Path::new(&argv0)
-            .file_name()
-            .map(|name| name.to_string_lossy())
-            .and_then(|name| {
-                name.strip_suffix(".exe")
-                    .unwrap_or(name.as_ref())
-                    .parse::<SpecBin>()
-                    .ok()
-            })
+            .file_stem()
+            .and_then(|stem| stem.to_string_lossy().parse::<SpecBin>().ok())
     }) {
         let success = actions::exec(bin, &args.collect::<Vec<_>>(), None).await?;
 

@@ -73,8 +73,8 @@ pub async fn exec(bin: SpecBin, args: &[String], spec: Option<&Spec>) -> Result<
         .await?;
 
     if !status.success() {
-        #[expect(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
-        return Err(ExitCodeError::from(status.code().unwrap_or(1) as u8).into());
+        let code: u8 = status.code().and_then(|c| c.try_into().ok()).unwrap_or(1);
+        return Err(ExitCodeError::from(code).into());
     }
 
     Ok(true)

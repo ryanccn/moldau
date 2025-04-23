@@ -6,7 +6,7 @@ use std::collections::BTreeSet;
 use tokio::fs;
 
 use eyre::Result;
-use log::info;
+use log::{debug, info};
 use owo_colors::{OwoColorize as _, colors::Blue};
 
 use crate::{dirs, models::SpecName, util::LogDisplay as _};
@@ -31,7 +31,9 @@ pub async fn clean(all: bool) -> Result<()> {
         }
 
         for version in &cached_versions {
-            fs::remove_dir_all(versions_path.join(version.to_string())).await?;
+            let path = versions_path.join(version.to_string());
+            fs::remove_dir_all(&path).await?;
+            debug!("removed {version} -> {}", path.display());
         }
 
         info!(

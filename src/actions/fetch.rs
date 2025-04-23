@@ -9,7 +9,7 @@ use std::{
 use tokio::fs;
 
 use eyre::{Result, bail, eyre};
-use log::warn;
+use log::{debug, warn};
 use owo_colors::colors::Blue;
 
 use flate2::bufread::GzDecoder;
@@ -110,8 +110,10 @@ pub async fn fetch_version(
     let bytes = download(&version.to_string(), &version.dist.tarball).await?;
 
     if spec.name != SpecName::Yarn && !version.integrity()?.check(&bytes) {
-        bail!("integrity mismatched for {version} (download)");
+        bail!("integrity mismatched for {version} (non-Yarn)");
     }
+
+    debug!("verified integrity for {version} (non-Yarn)");
 
     tar::Archive::new(GzDecoder::new(&bytes[..])).unpack(&unpack_dir)?;
     let unpack_root = find_root(unpack_dir.path()).await?;
@@ -131,8 +133,10 @@ pub async fn fetch_version(
             let bin_contents = fs::read(unpack_root.join(bin_path)).await?;
 
             if !spec_integrity.check(&bin_contents) {
-                bail!("integrity mismatched for {version} (yarn)");
+                bail!("integrity mismatched for {version} (Yarn)");
             }
+
+            debug!("verified integrity for {version} (Yarn)");
         }
     }
 

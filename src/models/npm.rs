@@ -6,6 +6,7 @@ use std::{collections::HashMap, env, fmt, sync::LazyLock};
 
 use base64::prelude::{BASE64_STANDARD, Engine as _};
 use eyre::{Result, eyre};
+use log::debug;
 use reqwest::header;
 use serde::Deserialize;
 
@@ -55,6 +56,8 @@ impl NpmPackage {
             .map_err(|()| eyre!("failed to construct npm registry URL"))?
             .push(&spec.to_npm_package_name());
 
+        debug!("fetching npm package: {url}");
+
         Ok(HTTP
             .get(url)
             .header(header::ACCEPT, NPM_INSTALL_HEADER_ACCEPT)
@@ -94,6 +97,8 @@ impl NpmVersion {
             .map_err(|()| eyre!("failed to construct npm registry URL"))?
             .push(&spec.to_npm_package_name())
             .push(&format!("{:#}", spec.version));
+
+        debug!("fetching npm version: {url}");
 
         Ok(HTTP
             .get(url)

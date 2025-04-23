@@ -31,6 +31,16 @@ pub struct DevEnginesPackageManager {
 
 impl PackageJson {
     pub fn spec(&self) -> Result<Option<Spec>> {
+        if let Some(spec) = &self.package_manager {
+            let spec: Spec = spec.parse()?;
+
+            if spec.version.exact().is_none() {
+                bail!("`packageManager` specified in package.json must be exact");
+            }
+
+            return Ok(Some(spec));
+        }
+
         if let Some(data) = &self
             .dev_engines
             .as_ref()
@@ -46,16 +56,6 @@ impl PackageJson {
 
             if spec.version.exact().is_none() {
                 bail!("`devEngines.packageManager` specified in package.json must be exact");
-            }
-
-            return Ok(Some(spec));
-        }
-
-        if let Some(spec) = &self.package_manager {
-            let spec: Spec = spec.parse()?;
-
-            if spec.version.exact().is_none() {
-                bail!("`packageManager` specified in package.json must be exact");
             }
 
             return Ok(Some(spec));

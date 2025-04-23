@@ -4,7 +4,12 @@
 
 use clap::builder::PossibleValue;
 use eyre::{Result, eyre};
-use std::{env, fmt, iter, path::Path, str::FromStr};
+use log::debug;
+use std::{
+    env, fmt, iter,
+    path::{self, Path},
+    str::FromStr,
+};
 use tokio::fs;
 
 use super::PackageJson;
@@ -15,23 +20,38 @@ pub struct Spec {
     pub version: SpecVersion,
 }
 
+enum SpecPathIterator<'a> {
+    Traverse(path::Ancestors<'a>),
+    NoTraverse(iter::Once<&'a Path>),
+}
+
+impl<'a> Iterator for SpecPathIterator<'a> {
+    type Item = &'a Path;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        match self {
+            Self::Traverse(it) => it.next(),
+            Self::NoTraverse(it) => it.next(),
+        }
+    }
+}
+
 impl Spec {
     pub async fn parse(traverse: bool) -> Result<Option<Self>> {
         let cwd = env::current_dir()?;
 
-        let path_iter: Box<dyn Iterator<Item = &Path>> = if traverse {
-            Box::new(cwd.ancestors())
+        for ancestor in if traverse {
+            SpecPathIterator::Traverse(cwd.ancestors())
         } else {
-            Box::new(iter::once(cwd.as_ref()))
-        };
-
-        for ancestor in path_iter {
+            SpecPathIterator::NoTraverse(iter::once(cwd.as_ref()))
+        } {
             if let Some(data) = fs::read(ancestor.join("package.json"))
                 .await
                 .ok()
                 .and_then(|d| serde_json::from_slice::<PackageJson>(&d).ok())
             {
                 if let Some(spec) = data.spec()? {
+                    debug!("parsed spec from {}: {spec}", ancestor.display());
                     return Ok(Some(spec));
                 }
             }
@@ -46,7 +66,7 @@ impl Spec {
             SpecName::Npm => "npm".into(),
 
             SpecName::Yarn => {
-                let is_classic = self.version.exact().is_some_and(|v| v.major <= 2)
+                let is_classic = self.version.exact().is_some_and(|v| v.major <= 1)
                     || self.version.semver_req().is_some_and(|r| {
                         r.comparators.iter().any(|c| match c.op {
                             semver::Op::Exact
@@ -146,6 +166,15 @@ impl SpecVersion {
     #[must_use]
     pub fn semver_req(&self) -> Option<&semver::VersionReq> {
         if let Self::SemverReq(v) = self {
+            Some(v)
+        } else {
+            None
+        }
+    }
+
+    #[must_use]
+    pub fn dist_tag(&self) -> Option<&str> {
+        if let Self::DistTag(v) = self {
             Some(v)
         } else {
             None
