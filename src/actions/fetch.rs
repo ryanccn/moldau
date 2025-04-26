@@ -17,10 +17,7 @@ use tempdir::TempDir;
 
 use crate::{
     dirs,
-    models::{
-        NpmPackage, NpmVersion, PackageJsonBinOnly, Spec, SpecName, SpecVersion,
-        SpecVersionIntegrity,
-    },
+    models::{NpmPackage, NpmVersion, PackageJsonBinOnly, Spec, SpecName, SpecVersion},
     util::{LogDisplay as _, download},
 };
 
@@ -41,24 +38,8 @@ async fn find_root(path: &Path) -> Result<PathBuf> {
 
 async fn resolve(spec: &Spec) -> Result<NpmVersion> {
     match &spec.version {
-        SpecVersion::Exact(version) => {
+        SpecVersion::Exact(_) => {
             let version_data = NpmVersion::fetch(spec).await?;
-
-            // The comparison here fails when a SHA-512 integrity is available from npm
-            // but a SHA-1 integrity is used in `spec`. This is intentional. If a SHA-512
-            // integrity is available, it should always be used. SHA-1 is not secure.
-
-            if spec.name != SpecName::Yarn {
-                let spec_integrity = SpecVersionIntegrity::parse(&version.build)?;
-
-                if let Some(spec_integrity) = spec_integrity {
-                    let npm_integrity = version_data.integrity()?;
-                    if spec_integrity != npm_integrity {
-                        bail!("integrity mismatched for {spec} (resolution)");
-                    }
-                }
-            }
-
             Ok(version_data)
         }
 
@@ -109,11 +90,25 @@ pub async fn fetch_version(
 
     let bytes = download(&version.to_string(), &version.dist.tarball).await?;
 
-    if spec.name != SpecName::Yarn && !version.integrity()?.check(&bytes) {
-        bail!("integrity mismatched for {version} (non-Yarn)");
+    if let Err((expected, actual)) = version.integrity()?.check(&bytes) {
+        bail!(
+            "integrity (download) mismatched for {version} (expected: {expected:?}, actual: {actual:?})"
+        );
     }
 
-    debug!("verified integrity for {version} (non-Yarn)");
+    debug!("integrity (download) verified for {version}");
+
+    if spec.name != SpecName::Yarn {
+        if let Some(spec_integrity) = spec.version.integrity()? {
+            if let Err((expected, actual)) = spec_integrity.check(&bytes) {
+                bail!(
+                    "integrity (spec) mismatched for {spec} (expected: {expected:?}, actual: {actual:?})"
+                );
+            }
+        }
+
+        debug!("integrity (spec) verified for {spec}");
+    }
 
     tar::Archive::new(GzDecoder::new(&bytes[..])).unpack(&unpack_dir)?;
     let unpack_root = find_root(unpack_dir.path()).await?;
@@ -124,7 +119,7 @@ pub async fn fetch_version(
     // the hash for the file anyway for the sake of compatibility.
 
     if spec.name == SpecName::Yarn {
-        if let Some(spec_integrity) = SpecVersionIntegrity::parse(&version.version.build)? {
+        if let Some(spec_integrity) = spec.version.integrity()? {
             let bin_path = version
                 .bin
                 .get("yarn")
@@ -132,11 +127,13 @@ pub async fn fetch_version(
 
             let bin_contents = fs::read(unpack_root.join(bin_path)).await?;
 
-            if !spec_integrity.check(&bin_contents) {
-                bail!("integrity mismatched for {version} (Yarn)");
+            if let Err((expected, actual)) = spec_integrity.check(&bin_contents) {
+                bail!(
+                    "integrity (spec) mismatched for {spec} (expected: {expected:?}, actual: {actual:?})"
+                );
             }
 
-            debug!("verified integrity for {version} (Yarn)");
+            debug!("integrity (spec) verified for {spec}");
         }
     }
 

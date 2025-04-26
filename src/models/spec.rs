@@ -156,28 +156,32 @@ pub enum SpecVersion {
 impl SpecVersion {
     #[must_use]
     pub fn exact(&self) -> Option<&semver::Version> {
-        if let Self::Exact(v) = self {
-            Some(v)
-        } else {
-            None
+        match self {
+            Self::Exact(v) => Some(v),
+            _ => None,
         }
     }
 
     #[must_use]
     pub fn semver_req(&self) -> Option<&semver::VersionReq> {
-        if let Self::SemverReq(v) = self {
-            Some(v)
-        } else {
-            None
+        match self {
+            Self::SemverReq(v) => Some(v),
+            _ => None,
         }
     }
 
     #[must_use]
     pub fn dist_tag(&self) -> Option<&str> {
-        if let Self::DistTag(v) = self {
-            Some(v)
-        } else {
-            None
+        match self {
+            Self::DistTag(t) => Some(t),
+            _ => None,
+        }
+    }
+
+    pub fn integrity(&self) -> Result<Option<SpecVersionIntegrity>> {
+        match self {
+            Self::Exact(v) => SpecVersionIntegrity::parse(&v.build),
+            _ => Ok(None),
         }
     }
 }
@@ -227,31 +231,49 @@ impl Default for SpecVersion {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum SpecVersionIntegrity {
     SHA512(Vec<u8>),
+    SHA224(Vec<u8>),
     SHA1(Vec<u8>),
 }
 
 impl SpecVersionIntegrity {
     pub fn parse(s: &str) -> Result<Option<Self>> {
-        Ok(if let Some(sha512) = s.strip_prefix("sha512.") {
-            Some(Self::SHA512(hex::decode(sha512)?))
-        } else if let Some(sha1) = s.strip_prefix("sha1.") {
-            Some(Self::SHA1(hex::decode(sha1)?))
+        if let Some(hash) = s.strip_prefix("sha512.") {
+            Ok(Some(Self::SHA512(hex::decode(hash)?)))
+        } else if let Some(hash) = s.strip_prefix("sha224.") {
+            Ok(Some(Self::SHA224(hex::decode(hash)?)))
+        } else if let Some(hash) = s.strip_prefix("sha1.") {
+            Ok(Some(Self::SHA1(hex::decode(hash)?)))
         } else {
-            None
-        })
+            Ok(None)
+        }
     }
 
-    #[must_use]
-    pub fn check(&self, bytes: &[u8]) -> bool {
+    pub fn check(&self, bytes: &[u8]) -> Result<(), (String, String)> {
+        let expected: &Vec<u8>;
+        let actual: Vec<u8>;
+
         match self {
-            SpecVersionIntegrity::SHA512(expected) => {
+            Self::SHA512(hash) => {
                 use sha2::{Digest as _, Sha512};
-                expected == &Sha512::digest(bytes).to_vec()
+                expected = hash;
+                actual = Sha512::digest(bytes).to_vec();
             }
-            SpecVersionIntegrity::SHA1(expected) => {
+            Self::SHA224(hash) => {
+                use sha2::{Digest as _, Sha224};
+                expected = hash;
+                actual = Sha224::digest(bytes).to_vec();
+            }
+            Self::SHA1(hash) => {
                 use sha1_checked::{Digest as _, Sha1};
-                expected == &Sha1::digest(bytes).to_vec()
+                expected = hash;
+                actual = Sha1::digest(bytes).to_vec();
             }
+        }
+
+        if expected == &actual {
+            Ok(())
+        } else {
+            Err((hex::encode(expected), hex::encode(actual)))
         }
     }
 }
@@ -259,8 +281,9 @@ impl SpecVersionIntegrity {
 impl fmt::Display for SpecVersionIntegrity {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::SHA512(sha512) => write!(f, "sha512.{}", hex::encode(sha512)),
-            Self::SHA1(sha1) => write!(f, "sha1.{}", hex::encode(sha1)),
+            Self::SHA512(hash) => write!(f, "sha512.{}", hex::encode(hash)),
+            Self::SHA224(hash) => write!(f, "sha224.{}", hex::encode(hash)),
+            Self::SHA1(hash) => write!(f, "sha1.{}", hex::encode(hash)),
         }
     }
 }
