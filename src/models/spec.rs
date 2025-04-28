@@ -67,22 +67,23 @@ impl Spec {
             SpecName::Npm => "npm".into(),
 
             SpecName::Yarn => {
-                let is_classic = self.version.exact().is_some_and(|v| v.major <= 1)
-                    || self.version.semver_req().is_some_and(|r| {
-                        r.comparators.iter().any(|c| match c.op {
-                            semver::Op::Exact
-                            | semver::Op::LessEq
-                            | semver::Op::Tilde
-                            | semver::Op::Caret => c.major <= 1,
-                            semver::Op::Less => {
-                                c.major <= 1
-                                    || c.major == 2
-                                        && c.minor.is_none_or(|n| n == 0)
-                                        && c.patch.is_none_or(|n| n == 0)
-                            }
-                            _ => false,
-                        })
-                    });
+                let is_classic = match &self.version {
+                    SpecVersion::Exact(v) => v.major <= 1,
+                    SpecVersion::SemverReq(r) => r.comparators.iter().any(|c| match c.op {
+                        semver::Op::Exact
+                        | semver::Op::LessEq
+                        | semver::Op::Tilde
+                        | semver::Op::Caret => c.major <= 1,
+                        semver::Op::Less => {
+                            c.major <= 1
+                                || c.major == 2
+                                    && c.minor.is_none_or(|n| n == 0)
+                                    && c.patch.is_none_or(|n| n == 0)
+                        }
+                        _ => false,
+                    }),
+                    SpecVersion::DistTag(_) => false,
+                };
 
                 if is_classic {
                     "yarn".into()
@@ -199,27 +200,13 @@ pub enum SpecVersion {
 
 impl SpecVersion {
     #[must_use]
-    pub fn exact(&self) -> Option<&semver::Version> {
-        match self {
-            Self::Exact(v) => Some(v),
-            _ => None,
-        }
+    pub fn is_exact(&self) -> bool {
+        matches!(self, Self::Exact(_))
     }
 
     #[must_use]
-    pub fn semver_req(&self) -> Option<&semver::VersionReq> {
-        match self {
-            Self::SemverReq(v) => Some(v),
-            _ => None,
-        }
-    }
-
-    #[must_use]
-    pub fn dist_tag(&self) -> Option<&str> {
-        match self {
-            Self::DistTag(t) => Some(t),
-            _ => None,
-        }
+    pub fn is_dist_tag(&self) -> bool {
+        matches!(self, Self::DistTag(_))
     }
 
     pub fn integrity(&self) -> Result<Option<SpecVersionIntegrity>> {
@@ -388,7 +375,7 @@ impl clap::ValueEnum for SpecBin {
 }
 
 macro_rules! impl_fromstr_display {
-    ($enum:ident, $($member:ident = $string:expr),* $(,)?) => {
+    ($enum:ident, $($member:ident = $string:expr),+ $(,)?) => {
         impl FromStr for $enum {
             type Err = eyre::Report;
 

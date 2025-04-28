@@ -46,7 +46,7 @@ fn detect_eol(s: Option<&str>) -> String {
 }
 
 async fn write_package_json(spec: &Spec) -> Result<()> {
-    assert!(spec.version.exact().is_some());
+    assert!(spec.version.is_exact());
 
     let package_json_path = env::current_dir()?.join("package.json");
 

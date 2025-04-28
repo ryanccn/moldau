@@ -34,7 +34,7 @@ impl PackageJson {
         if let Some(spec) = &self.package_manager {
             let spec: Spec = spec.parse()?;
 
-            if spec.version.exact().is_none() {
+            if !spec.version.is_exact() {
                 bail!("`packageManager` specified in package.json must be exact");
             }
 
@@ -54,7 +54,7 @@ impl PackageJson {
                 },
             };
 
-            if spec.version.exact().is_none() {
+            if !spec.version.is_exact() {
                 bail!("`devEngines.packageManager` specified in package.json must be exact");
             }
 

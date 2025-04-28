@@ -25,7 +25,7 @@ pub async fn prepare(spec: &Spec) -> Result<(PathBuf, HashMap<String, String>)> 
     let mut cached_ok_versions = BTreeSet::new();
 
     // There is no way of knowing if a cached version matches a dist tag
-    if spec.version.dist_tag().is_none() {
+    if !spec.version.is_dist_tag() {
         let mut read_dir = fs::read_dir(&cache_versions_dir).await?;
 
         while let Some(entry) = read_dir.next_entry().await? {
