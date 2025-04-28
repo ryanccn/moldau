@@ -3,8 +3,9 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 use clap::builder::PossibleValue;
-use eyre::{Result, eyre};
+use eyre::{Result, bail, eyre};
 use log::debug;
+
 use std::{
     env, fmt, iter,
     path::{self, Path},
@@ -12,7 +13,7 @@ use std::{
 };
 use tokio::fs;
 
-use super::PackageJson;
+use super::{NpmVersion, PackageJson};
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Spec {
@@ -92,6 +93,49 @@ impl Spec {
 
             SpecName::Pnpm => "pnpm".into(),
         }
+    }
+
+    pub async fn verify_integrity(
+        &self,
+        bytes: &[u8],
+        unpack_root: &Path,
+        version: &NpmVersion,
+    ) -> Result<()> {
+        // This special handling of integrity verification for Yarn is inherited from
+        // Corepack. Corepack downloads Yarn as a file rather than a package, and
+        // calculates the hash from that file. We download the package, but calculate
+        // the hash for the file anyway for the sake of compatibility.
+
+        if self.name == SpecName::Yarn {
+            if let Some(integrity) = self.version.integrity()? {
+                let bin_path = version
+                    .bin
+                    .get("yarn")
+                    .ok_or_else(|| eyre!("could not resolve yarn bin path in {version}"))?;
+
+                let bin_contents = fs::read(unpack_root.join(bin_path)).await?;
+
+                if let Err((expected, actual)) = integrity.verify(&bin_contents) {
+                    bail!(
+                        "integrity (spec) failed to verify for {self} (expected: {expected}, actual: {actual})"
+                    );
+                }
+
+                debug!("integrity (spec) verified for {self}");
+            }
+        } else {
+            if let Some(integrity) = self.version.integrity()? {
+                if let Err((expected, actual)) = integrity.verify(bytes) {
+                    bail!(
+                        "integrity (spec) failed to verify for {self} (expected: {expected}, actual: {actual})"
+                    );
+                }
+            }
+
+            debug!("integrity (spec) verified for {self}");
+        }
+
+        Ok(())
     }
 }
 
@@ -231,6 +275,8 @@ impl Default for SpecVersion {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum SpecVersionIntegrity {
     SHA512(Vec<u8>),
+    SHA384(Vec<u8>),
+    SHA256(Vec<u8>),
     SHA224(Vec<u8>),
     SHA1(Vec<u8>),
 }
@@ -239,6 +285,10 @@ impl SpecVersionIntegrity {
     pub fn parse(s: &str) -> Result<Option<Self>> {
         if let Some(hash) = s.strip_prefix("sha512.") {
             Ok(Some(Self::SHA512(hex::decode(hash)?)))
+        } else if let Some(hash) = s.strip_prefix("sha384.") {
+            Ok(Some(Self::SHA384(hex::decode(hash)?)))
+        } else if let Some(hash) = s.strip_prefix("sha256.") {
+            Ok(Some(Self::SHA256(hex::decode(hash)?)))
         } else if let Some(hash) = s.strip_prefix("sha224.") {
             Ok(Some(Self::SHA224(hex::decode(hash)?)))
         } else if let Some(hash) = s.strip_prefix("sha1.") {
@@ -248,23 +298,31 @@ impl SpecVersionIntegrity {
         }
     }
 
-    pub fn check(&self, bytes: &[u8]) -> Result<(), (String, String)> {
+    pub fn verify(&self, bytes: &[u8]) -> Result<(), (String, String)> {
+        use sha1_checked::Sha1;
+        use sha2::{Digest as _, Sha224, Sha256, Sha384, Sha512};
+
         let expected: &Vec<u8>;
         let actual: Vec<u8>;
 
         match self {
             Self::SHA512(hash) => {
-                use sha2::{Digest as _, Sha512};
                 expected = hash;
                 actual = Sha512::digest(bytes).to_vec();
             }
+            Self::SHA384(hash) => {
+                expected = hash;
+                actual = Sha384::digest(bytes).to_vec();
+            }
+            Self::SHA256(hash) => {
+                expected = hash;
+                actual = Sha256::digest(bytes).to_vec();
+            }
             Self::SHA224(hash) => {
-                use sha2::{Digest as _, Sha224};
                 expected = hash;
                 actual = Sha224::digest(bytes).to_vec();
             }
             Self::SHA1(hash) => {
-                use sha1_checked::{Digest as _, Sha1};
                 expected = hash;
                 actual = Sha1::digest(bytes).to_vec();
             }
@@ -282,6 +340,8 @@ impl fmt::Display for SpecVersionIntegrity {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::SHA512(hash) => write!(f, "sha512.{}", hex::encode(hash)),
+            Self::SHA384(hash) => write!(f, "sha384.{}", hex::encode(hash)),
+            Self::SHA256(hash) => write!(f, "sha256.{}", hex::encode(hash)),
             Self::SHA224(hash) => write!(f, "sha224.{}", hex::encode(hash)),
             Self::SHA1(hash) => write!(f, "sha1.{}", hex::encode(hash)),
         }

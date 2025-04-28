@@ -10,14 +10,13 @@ use crate::http::HTTP;
 
 static PROGRESS_CHAR: &str = "━━";
 
-pub async fn download(prefix: &str, url: impl reqwest::IntoUrl) -> Result<Vec<u8>> {
-    let url = url.into_url()?;
+pub async fn download(prefix: &str, url: &str) -> Result<Vec<u8>> {
     debug!("downloading {url}");
 
     let mut resp = HTTP.get(url).send().await?.error_for_status()?;
     let content_length = resp.content_length().unwrap_or_default();
 
-    let mut bytes: Vec<u8> = Vec::with_capacity(content_length.try_into()?);
+    let mut bytes: Vec<u8> = Vec::with_capacity(content_length.try_into().unwrap_or_default());
 
     let bar = ProgressBar::new(content_length)
         .with_prefix(prefix.to_owned())

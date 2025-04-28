@@ -26,9 +26,6 @@ jobs:
 
     strategy:
       matrix:
-        toolchain:
-          - stable
-          - nightly
         target:
           - aarch64-apple-darwin
           - x86_64-apple-darwin
@@ -56,7 +53,6 @@ jobs:
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@fcf085fcb4b4b8f63f96906cd713eb52181b5ea4 # ratchet:dtolnay/rust-toolchain@stable
         with:
-          toolchain: ${{ matrix.toolchain }}
           target: ${{ matrix.target }}
 
       - name: Setup Rust cache
@@ -68,19 +64,6 @@ jobs:
         with:
           tool: cargo-auditable
 
-      - name: Enable Rust nightly flags
-        if: ${{ matrix.toolchain == 'nightly' }}
-        shell: bash
-        run: |
-          mkdir -p .cargo
-          cat << EOF > .cargo/config.toml
-          [unstable]
-          trim-paths = true
-
-          [profile.release]
-          trim-paths = "all"
-          EOF
-
       - name: Build
         run: cargo auditable build --release --locked --target ${{ matrix.target }}
         env:
@@ -89,7 +72,7 @@ jobs:
 
       - name: Generate build provenance attestations
         uses: actions/attest-build-provenance@c074443f1aee8d4aeeae555aebba3282517141b2 # ratchet:actions/attest-build-provenance@v2
-        if: ${{ github.event_name != 'pull_request' && matrix.toolchain == 'nightly' }}
+        if: ${{ github.event_name != 'pull_request' }}
         with:
           subject-path: |
             ./target/${{ matrix.target }}/release/moldau
@@ -97,7 +80,6 @@ jobs:
 
       - name: Upload artifacts
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # ratchet:actions/upload-artifact@v4
-        if: ${{ matrix.toolchain == 'nightly' }}
         with:
           if-no-files-found: "error"
           name: moldau-${{ matrix.target }}

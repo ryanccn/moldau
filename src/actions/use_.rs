@@ -124,7 +124,7 @@ pub async fn use_(spec: &Spec) -> Result<()> {
             .ok_or_else(|| eyre!("could not find matching version for {spec}"))?,
     };
 
-    let mut version = version_data.version.clone();
+    let mut version: semver::Version = version_data.version.parse()?;
 
     if spec.name == SpecName::Yarn {
         use sha2::{Digest as _, Sha512};
