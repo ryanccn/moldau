@@ -15,10 +15,10 @@ pub use exit_code_error::*;
 pub use log_display::*;
 
 pub async fn find_root(path: &Path) -> Result<Cow<Path>> {
-    let mut readdir = fs::read_dir(&path).await?;
+    let mut read_dir = fs::read_dir(&path).await?;
     let mut only_entry = None;
 
-    while let Some(entry) = readdir.next_entry().await?.map(|de| de.path()) {
+    while let Some(entry) = read_dir.next_entry().await?.map(|de| de.path()) {
         if only_entry.is_some() || !entry.is_dir() {
             return Ok(Cow::Borrowed(path));
         }

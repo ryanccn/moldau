@@ -19,7 +19,7 @@ pub async fn clean(all: bool) -> Result<()> {
         let versions_path = all_versions_path.join(name.to_string());
 
         if let Ok(mut read_dir) = fs::read_dir(&versions_path).await {
-            while let Ok(Some(entry)) = read_dir.next_entry().await {
+            while let Some(entry) = read_dir.next_entry().await? {
                 if let Ok(version) = semver::Version::parse(&entry.file_name().to_string_lossy()) {
                     cached_versions.insert(version);
                 }

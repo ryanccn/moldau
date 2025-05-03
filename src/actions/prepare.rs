@@ -26,19 +26,21 @@ pub async fn prepare(spec: &Spec) -> Result<(PathBuf, HashMap<String, String>)> 
 
     // There is no way of knowing if a cached version matches a dist tag
     if !spec.version.is_dist_tag() {
-        let mut read_dir = fs::read_dir(&cache_versions_dir).await?;
-
-        while let Some(entry) = read_dir.next_entry().await? {
-            if let Ok(this_version) = semver::Version::parse(&entry.file_name().to_string_lossy()) {
-                if match &spec.version {
-                    SpecVersion::Exact(version) => {
-                        // `Version::cmp_precedence` discards build metadata, unlike `==`
-                        this_version.cmp_precedence(version).is_eq()
+        if let Ok(mut read_dir) = fs::read_dir(&cache_versions_dir).await {
+            while let Some(entry) = read_dir.next_entry().await? {
+                if let Ok(this_version) =
+                    semver::Version::parse(&entry.file_name().to_string_lossy())
+                {
+                    if match &spec.version {
+                        SpecVersion::Exact(version) => {
+                            // `Version::cmp_precedence` discards build metadata, unlike `==`
+                            this_version.cmp_precedence(version).is_eq()
+                        }
+                        SpecVersion::SemverReq(req) => req.matches(&this_version),
+                        SpecVersion::DistTag(_) => false,
+                    } {
+                        cached_ok_versions.insert(this_version);
                     }
-                    SpecVersion::SemverReq(req) => req.matches(&this_version),
-                    SpecVersion::DistTag(_) => false,
-                } {
-                    cached_ok_versions.insert(this_version);
                 }
             }
         }

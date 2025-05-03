@@ -67,7 +67,8 @@ pub async fn exec(bin: SpecBin, args: &[String], spec: Option<&Spec>) -> Result<
         .get(&bin.to_string())
         .ok_or_else(|| eyre!("could not obtain path of {bin:?} in {spec}"))?;
 
-    let status = Command::new(cache_path.join(bin_path))
+    let status = Command::new("node")
+        .arg(cache_path.join(bin_path))
         .args(args)
         .status()
         .await?;

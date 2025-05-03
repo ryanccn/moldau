@@ -17,8 +17,8 @@ repository = "https://github.com/ryanccn/moldau.git"
 anstream = "0.6.18"
 base64 = "0.22.1"
 clap = { version = "4.5.37", features = ["derive", "string"] }
-clap_complete = "4.5.47"
-color-eyre = { version = "0.6.3", default-features = false }
+clap_complete = "4.5.48"
+color-eyre = { version = "0.6.4", default-features = false }
 env_logger = "0.11.8"
 etcetera = "0.10.0"
 eyre = "0.6.12"
@@ -33,7 +33,7 @@ semver = { version = "1.0.26", features = ["serde"] }
 serde = { version = "1.0.219", features = ["derive"] }
 serde_json = { version = "1.0.140", features = ["preserve_order"] }
 sha1-checked = "0.10.0"
-sha2 = "0.10.8"
+sha2 = "0.10.9"
 tar = "0.4.44"
 tempdir = "0.3.7"
 tokio = { version = "1.44.2", features = ["full"] }
