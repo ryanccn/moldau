@@ -4,7 +4,7 @@
 
 [package]
 name = "moldau"
-version = "0.1.2"
+version = "0.1.3"
 edition = "2024"
 
 description = "Modern version manager for Node.js package managers"
