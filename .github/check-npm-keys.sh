@@ -2,6 +2,10 @@
 #! nix shell nixpkgs#bash nixpkgs#curl nixpkgs#jq nixpkgs#gnugrep --command bash
 #  shellcheck shell=bash
 
+# SPDX-FileCopyrightText: 2025 Ryan Cao <hello@ryanccn.dev>
+#
+# SPDX-License-Identifier: GPL-3.0-or-later
+
 set -euo pipefail
 
 bad=no
