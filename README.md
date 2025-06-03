@@ -31,6 +31,6 @@ moldau clean
 
 ## Corepack compatibility
 
-Moldau aims to be as compatible with Corepack as possible. That being said, it intentionally does not support certain features such as auto pin. Moldau reads the `COREPACK_ENABLE_STRICT` and `COREPACK_NPM_REGISTRY` environment variables and interprets them in [the same way that Corepack does](https://github.com/nodejs/corepack#environment-variables).
+Moldau aims to be as compatible with Corepack as possible. That being said, it intentionally does not support certain features such as auto pin. Moldau reads the `COREPACK_ENABLE_STRICT`, `COREPACK_NPM_REGISTRY`, `COREPACK_NPM_TOKEN`, `COREPACK_NPM_USERNAME`, and `COREPACK_NPM_PASSWORD` environment variables and interprets them in [the same way that Corepack does](https://github.com/nodejs/corepack#environment-variables).
 
-Moldau currently does not support Yarn 2.x versions other than 2.4.1. This is due to an internal implementation detail.
+Moldau currently does not support Yarn 2.x versions other than 2.4.1. This is due to an internal implementation detail. It does support other versions of Yarn, including Yarn 4 and Yarn 1 (classic).

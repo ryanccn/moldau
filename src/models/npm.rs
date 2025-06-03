@@ -7,7 +7,10 @@ use std::{collections::HashMap, env, fmt, sync::LazyLock};
 use base64::prelude::{BASE64_STANDARD, Engine as _};
 use eyre::{Result, bail, eyre};
 use log::debug;
-use reqwest::{Url, header};
+use reqwest::{
+    Url,
+    header::{self, HeaderMap, HeaderValue},
+};
 use serde::Deserialize;
 
 use super::{Spec, SpecVersionIntegrity};
@@ -19,6 +22,27 @@ static NPM_REGISTRY: LazyLock<String> = LazyLock::new(|| {
 
 static NPM_INSTALL_HEADER_ACCEPT: &str =
     "application/vnd.npm.install-v1+json; q=1.0, application/json; q=0.8, */*";
+
+fn npm_common_headers() -> Result<HeaderMap> {
+    let mut headers = HeaderMap::new();
+    headers.insert(header::ACCEPT, NPM_INSTALL_HEADER_ACCEPT.parse()?);
+
+    if let Ok(token) = env::var("COREPACK_NPM_TOKEN") {
+        let mut header: HeaderValue = format!("Bearer {token}").parse()?;
+        header.set_sensitive(true);
+        headers.insert(header::AUTHORIZATION, header);
+    } else if let Ok(username) = env::var("COREPACK_NPM_USERNAME") {
+        if let Ok(password) = env::var("COREPACK_NPM_PASSWORD") {
+            let encoded = BASE64_STANDARD.encode(format!("{username}:{password}"));
+
+            let mut header: HeaderValue = format!("Basic {encoded}").parse()?;
+            header.set_sensitive(true);
+            headers.insert(header::AUTHORIZATION, header);
+        }
+    }
+
+    Ok(headers)
+}
 
 #[derive(Deserialize, Clone, Debug)]
 #[serde(rename_all = "kebab-case")]
@@ -68,7 +92,7 @@ impl NpmPackage {
 
         Ok(HTTP
             .get(url)
-            .header(header::ACCEPT, NPM_INSTALL_HEADER_ACCEPT)
+            .headers(npm_common_headers()?)
             .send()
             .await?
             .error_for_status()?
@@ -110,7 +134,7 @@ impl NpmVersion {
 
         Ok(HTTP
             .get(url)
-            .header(header::ACCEPT, NPM_INSTALL_HEADER_ACCEPT)
+            .headers(npm_common_headers()?)
             .send()
             .await?
             .error_for_status()?
