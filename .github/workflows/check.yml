@@ -27,13 +27,13 @@ jobs:
           persist-credentials: false
 
       - name: Install Nix
-        uses: cachix/install-nix-action@754537aaedb35f72ab11a60cc162c49ef3016495 # ratchet:cachix/install-nix-action@v31
+        uses: cachix/install-nix-action@17fe5fb4a23ad6cbbe47d6b3f359611ad276644c # ratchet:cachix/install-nix-action@v31
 
       - name: Check
         run: nix build --fallback --print-build-logs '.#checks.x86_64-linux.clippy'
 
       - name: Upload analysis results
-        uses: github/codeql-action/upload-sarif@28deaeda66b76a05916b6923827895f2b14ab387 # ratchet:github/codeql-action/upload-sarif@v3
+        uses: github/codeql-action/upload-sarif@ff0a06e83cb2de871e5a09832bc6a81e7276941f # ratchet:github/codeql-action/upload-sarif@v3
         with:
           sarif_file: result
           wait-for-processing: true
@@ -48,7 +48,7 @@ jobs:
           persist-credentials: false
 
       - name: Install Nix
-        uses: cachix/install-nix-action@754537aaedb35f72ab11a60cc162c49ef3016495 # ratchet:cachix/install-nix-action@v31
+        uses: cachix/install-nix-action@17fe5fb4a23ad6cbbe47d6b3f359611ad276644c # ratchet:cachix/install-nix-action@v31
 
       - name: Check
         run: nix build --fallback --print-build-logs '.#checks.x86_64-linux.rustfmt'
@@ -63,7 +63,7 @@ jobs:
           persist-credentials: false
 
       - name: Install Nix
-        uses: cachix/install-nix-action@754537aaedb35f72ab11a60cc162c49ef3016495 # ratchet:cachix/install-nix-action@v31
+        uses: cachix/install-nix-action@17fe5fb4a23ad6cbbe47d6b3f359611ad276644c # ratchet:cachix/install-nix-action@v31
 
       - name: Check
         run: nix build --fallback --print-build-logs '.#checks.x86_64-linux.nixfmt'
@@ -78,7 +78,7 @@ jobs:
           persist-credentials: false
 
       - name: Install Nix
-        uses: cachix/install-nix-action@754537aaedb35f72ab11a60cc162c49ef3016495 # ratchet:cachix/install-nix-action@v31
+        uses: cachix/install-nix-action@17fe5fb4a23ad6cbbe47d6b3f359611ad276644c # ratchet:cachix/install-nix-action@v31
 
       - name: Check
         run: nix build --fallback --print-build-logs '.#checks.x86_64-linux.reuse'

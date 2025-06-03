@@ -51,7 +51,7 @@ jobs:
           persist-credentials: false
 
       - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@fcf085fcb4b4b8f63f96906cd713eb52181b5ea4 # ratchet:dtolnay/rust-toolchain@stable
+        uses: dtolnay/rust-toolchain@4305c38b25d97ef35a8ad1f985ccf2d2242004f2 # ratchet:dtolnay/rust-toolchain@stable
         with:
           target: ${{ matrix.target }}
 
@@ -60,7 +60,7 @@ jobs:
         if: ${{ inputs.disable-cache != true }}
 
       - name: Install cargo-auditable
-        uses: taiki-e/install-action@ab3728c7ba6948b9b429627f4d55a68842b27f18 # ratchet:taiki-e/install-action@v2
+        uses: taiki-e/install-action@7bf3bbf3104a2e9a77906ccbdf6d4aa6a87b0210 # ratchet:taiki-e/install-action@v2
         with:
           tool: cargo-auditable
 
@@ -71,7 +71,7 @@ jobs:
           CARGO_PROFILE_RELEASE_CODEGEN_UNITS: "1"
 
       - name: Generate build provenance attestations
-        uses: actions/attest-build-provenance@c074443f1aee8d4aeeae555aebba3282517141b2 # ratchet:actions/attest-build-provenance@v2
+        uses: actions/attest-build-provenance@db473fddc028af60658334401dc6fa3ffd8669fd # ratchet:actions/attest-build-provenance@v2
         if: ${{ github.event_name != 'pull_request' }}
         with:
           subject-path: |
@@ -112,13 +112,13 @@ jobs:
           persist-credentials: false
 
       - name: Install Nix
-        uses: cachix/install-nix-action@754537aaedb35f72ab11a60cc162c49ef3016495 # ratchet:cachix/install-nix-action@v31
+        uses: cachix/install-nix-action@17fe5fb4a23ad6cbbe47d6b3f359611ad276644c # ratchet:cachix/install-nix-action@v31
 
       - name: Build
         run: nix build --fallback --print-build-logs '.#moldau-static-${{ matrix.target }}'
 
       - name: Generate build provenance attestations
-        uses: actions/attest-build-provenance@c074443f1aee8d4aeeae555aebba3282517141b2 # ratchet:actions/attest-build-provenance@v2
+        uses: actions/attest-build-provenance@db473fddc028af60658334401dc6fa3ffd8669fd # ratchet:actions/attest-build-provenance@v2
         if: ${{ github.event_name != 'pull_request' }}
         with:
           subject-path: ./result/bin/moldau
