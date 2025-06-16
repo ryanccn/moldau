@@ -28,7 +28,7 @@ indicatif = { version = "0.17.11", features = ["improved_unicode"] }
 log = "0.4.27"
 owo-colors = { version = "4.2.1" }
 p256 = "0.13.2"
-reqwest = { version = "0.12.19", default-features = false, features = ["charset", "http2", "macos-system-configuration", "rustls-tls", "json", "deflate", "gzip", "brotli", "zstd"] }
+reqwest = { version = "0.12.20", default-features = false, features = ["charset", "http2", "macos-system-configuration", "rustls-tls", "json", "deflate", "gzip", "brotli", "zstd"] }
 semver = { version = "1.0.26", features = ["serde"] }
 serde = { version = "1.0.219", features = ["derive"] }
 serde_json = { version = "1.0.140", features = ["preserve_order"] }
