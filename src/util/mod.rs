@@ -14,7 +14,7 @@ pub use download::*;
 pub use exit_code_error::*;
 pub use log_display::*;
 
-pub async fn find_root(path: &Path) -> Result<Cow<Path>> {
+pub async fn find_root(path: &Path) -> Result<Cow<'_, Path>> {
     let mut read_dir = fs::read_dir(&path).await?;
     let mut only_entry = None;
 

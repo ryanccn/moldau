@@ -14,30 +14,30 @@ homepage = "https://github.com/ryanccn/moldau"
 repository = "https://github.com/ryanccn/moldau.git"
 
 [dependencies]
-anstream = "0.6.18"
+anstream = "0.6.20"
 base64 = "0.22.1"
-clap = { version = "4.5.39", features = ["derive", "string"] }
-clap_complete = "4.5.52"
+clap = { version = "4.5.45", features = ["derive", "string"] }
+clap_complete = "4.5.57"
 color-eyre = { version = "0.6.5", default-features = false }
 env_logger = "0.11.8"
 etcetera = "0.10.0"
 eyre = "0.6.12"
-flate2 = "1.1.1"
+flate2 = "1.1.2"
 hex = "0.4.3"
-indicatif = { version = "0.17.11", features = ["improved_unicode"] }
+indicatif = { version = "0.18.0", features = ["improved_unicode"] }
 log = "0.4.27"
-owo-colors = { version = "4.2.1" }
+owo-colors = { version = "4.2.2" }
 p256 = "0.13.2"
-reqwest = { version = "0.12.19", default-features = false, features = ["charset", "http2", "macos-system-configuration", "rustls-tls", "json", "deflate", "gzip", "brotli", "zstd"] }
+reqwest = { version = "0.12.23", default-features = false, features = ["charset", "http2", "macos-system-configuration", "rustls-tls", "json", "deflate", "gzip", "brotli", "zstd"] }
 semver = { version = "1.0.26", features = ["serde"] }
 serde = { version = "1.0.219", features = ["derive"] }
-serde_json = { version = "1.0.140", features = ["preserve_order"] }
+serde_json = { version = "1.0.142", features = ["preserve_order"] }
 sha1-checked = "0.10.0"
 sha2 = "0.10.9"
 tar = "0.4.44"
 tempdir = "0.3.7"
-tokio = { version = "1.45.1", features = ["full"] }
-which = "7.0.3"
+tokio = { version = "1.47.1", features = ["full"] }
+which = "8.0.0"
 
 [lints.clippy]
 all = { level = "warn", priority = -1 }

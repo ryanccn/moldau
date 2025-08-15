@@ -31,14 +31,14 @@ fn npm_common_headers() -> Result<HeaderMap> {
         let mut header: HeaderValue = format!("Bearer {token}").parse()?;
         header.set_sensitive(true);
         headers.insert(header::AUTHORIZATION, header);
-    } else if let Ok(username) = env::var("COREPACK_NPM_USERNAME") {
-        if let Ok(password) = env::var("COREPACK_NPM_PASSWORD") {
-            let encoded = BASE64_STANDARD.encode(format!("{username}:{password}"));
+    } else if let Ok(username) = env::var("COREPACK_NPM_USERNAME")
+        && let Ok(password) = env::var("COREPACK_NPM_PASSWORD")
+    {
+        let encoded = BASE64_STANDARD.encode(format!("{username}:{password}"));
 
-            let mut header: HeaderValue = format!("Basic {encoded}").parse()?;
-            header.set_sensitive(true);
-            headers.insert(header::AUTHORIZATION, header);
-        }
+        let mut header: HeaderValue = format!("Basic {encoded}").parse()?;
+        header.set_sensitive(true);
+        headers.insert(header::AUTHORIZATION, header);
     }
 
     Ok(headers)

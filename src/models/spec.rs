@@ -50,11 +50,10 @@ impl Spec {
                 .await
                 .ok()
                 .and_then(|d| serde_json::from_slice::<PackageJson>(&d).ok())
+                && let Some(spec) = data.spec()?
             {
-                if let Some(spec) = data.spec()? {
-                    debug!("parsed spec from {}: {spec}", ancestor.display());
-                    return Ok(Some(spec));
-                }
+                debug!("parsed spec from {}: {spec}", ancestor.display());
+                return Ok(Some(spec));
             }
         }
 
@@ -125,12 +124,12 @@ impl Spec {
                 debug!("integrity (spec) verified for {self}");
             }
         } else {
-            if let Some(integrity) = self.version.integrity()? {
-                if let Err((expected, actual)) = integrity.verify(bytes) {
-                    bail!(
-                        "integrity (spec) failed to verify for {self} (expected: {expected}, actual: {actual})"
-                    );
-                }
+            if let Some(integrity) = self.version.integrity()?
+                && let Err((expected, actual)) = integrity.verify(bytes)
+            {
+                bail!(
+                    "integrity (spec) failed to verify for {self} (expected: {expected}, actual: {actual})"
+                );
             }
 
             debug!("integrity (spec) verified for {self}");

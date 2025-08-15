@@ -2,7 +2,10 @@
 //
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-use std::{env, path::Path};
+use std::{
+    env,
+    path::{Path, PathBuf},
+};
 use tokio::{fs, io};
 
 use eyre::Result;
@@ -12,22 +15,28 @@ use crate::models::SpecBin;
 
 #[cfg(unix)]
 async fn write_shim(dest: &Path, shim: &SpecBin, force: bool) -> Result<()> {
-    use which::which_global;
-    let moldau = which_global("moldau")?;
+    let current_exe = env::current_exe()?.canonicalize()?;
+
+    let moldau: PathBuf;
+
+    if let Ok(which_result) = which::which_global("moldau")
+        && which_result.canonicalize().is_ok_and(|p| p == current_exe)
+    {
+        moldau = which_result;
+    } else {
+        moldau = current_exe;
+    }
 
     let shim_path = dest.join(shim.to_string());
 
-    if force {
-        if let Err(err) = fs::remove_file(&shim_path).await {
-            if err.kind() != io::ErrorKind::NotFound {
-                return Err(err.into());
-            }
-        }
+    if force
+        && let Err(err) = fs::remove_file(&shim_path).await
+        && err.kind() != io::ErrorKind::NotFound
+    {
+        return Err(err.into());
     }
 
-    let outcome = fs::symlink(&moldau, &shim_path).await;
-
-    if let Err(err) = outcome {
+    if let Err(err) = fs::symlink(&moldau, &shim_path).await {
         if err.kind() == io::ErrorKind::AlreadyExists {
             if !fs::read_link(&shim_path).await.is_ok_and(|p| p == moldau) {
                 return Err(err.into());

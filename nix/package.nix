@@ -8,6 +8,7 @@
   rustPlatform,
   installShellFiles,
   self,
+  includeShims ? false,
   enableLTO ? true,
   enableOptimizeSize ? false,
 }:
@@ -49,12 +50,16 @@ rustPlatform.buildRustPackage (finalAttrs: {
       CARGO_PROFILE_RELEASE_STRIP = "symbols";
     };
 
-  postInstall = lib.optionalString (stdenv.buildPlatform.canExecute stdenv.hostPlatform) ''
-    installShellCompletion --cmd ${finalAttrs.pname} \
-      --bash <("$out/bin/${finalAttrs.pname}" completions bash) \
-      --zsh <("$out/bin/${finalAttrs.pname}" completions zsh) \
-      --fish <("$out/bin/${finalAttrs.pname}" completions fish)
-  '';
+  postInstall =
+    lib.optionalString includeShims ''
+      "$out/bin/${finalAttrs.pname}" shims "$out/bin"
+    ''
+    + lib.optionalString (stdenv.buildPlatform.canExecute stdenv.hostPlatform) ''
+      installShellCompletion --cmd ${finalAttrs.pname} \
+        --bash <("$out/bin/${finalAttrs.pname}" completions bash) \
+        --zsh <("$out/bin/${finalAttrs.pname}" completions zsh) \
+        --fish <("$out/bin/${finalAttrs.pname}" completions fish)
+    '';
 
   doCheck = false;
 
