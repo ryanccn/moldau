@@ -31,7 +31,7 @@ p256 = "0.13.2"
 reqwest = { version = "0.12.23", default-features = false, features = ["charset", "http2", "macos-system-configuration", "rustls-tls", "json", "deflate", "gzip", "brotli", "zstd"] }
 semver = { version = "1.0.26", features = ["serde"] }
 serde = { version = "1.0.219", features = ["derive"] }
-serde_json = { version = "1.0.142", features = ["preserve_order"] }
+serde_json = { version = "1.0.143", features = ["preserve_order"] }
 sha1-checked = "0.10.0"
 sha2 = "0.10.9"
 tar = "0.4.44"
