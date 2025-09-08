@@ -25,7 +25,7 @@ eyre = "0.6.12"
 flate2 = "1.1.2"
 hex = "0.4.3"
 indicatif = { version = "0.18.0", features = ["improved_unicode"] }
-log = "0.4.27"
+log = "0.4.28"
 owo-colors = { version = "4.2.2" }
 p256 = "0.13.2"
 reqwest = { version = "0.12.23", default-features = false, features = ["charset", "http2", "macos-system-configuration", "rustls-tls", "json", "deflate", "gzip", "brotli", "zstd"] }
