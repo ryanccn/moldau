@@ -14,7 +14,7 @@ homepage = "https://github.com/ryanccn/moldau"
 repository = "https://github.com/ryanccn/moldau.git"
 
 [dependencies]
-anstream = "0.6.20"
+anstream = "0.6.21"
 base64 = "0.22.1"
 clap = { version = "4.5.48", features = ["derive", "string"] }
 clap_complete = "4.5.58"
