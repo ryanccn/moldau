@@ -22,7 +22,7 @@ color-eyre = { version = "0.6.5", default-features = false }
 env_logger = "0.11.8"
 etcetera = "0.10.0"
 eyre = "0.6.12"
-flate2 = "1.1.2"
+flate2 = "1.1.5"
 hex = "0.4.3"
 indicatif = { version = "0.18.0", features = ["improved_unicode"] }
 log = "0.4.28"
