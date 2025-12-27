@@ -19,12 +19,12 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # ratchet:actions/checkout@v5
+        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # ratchet:actions/checkout@v5
         with:
           persist-credentials: false
 
       - name: Install Nix
-        uses: cachix/install-nix-action@a809471b5c7c913aa67bec8f459a11a0decc3fce # ratchet:cachix/install-nix-action@v31
+        uses: cachix/install-nix-action@4e002c8ec80594ecd40e759629461e26c8abed15 # ratchet:cachix/install-nix-action@v31
 
       - name: Check
         run: ./.github/check-npm-keys.sh
