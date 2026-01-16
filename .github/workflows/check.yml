@@ -33,7 +33,7 @@ jobs:
         run: nix build --fallback --print-build-logs '.#checks.x86_64-linux.clippy'
 
       - name: Upload analysis results
-        uses: github/codeql-action/upload-sarif@5d4e8d1aca955e8d8589aabd499c5cae939e33c7 # ratchet:github/codeql-action/upload-sarif@v3
+        uses: github/codeql-action/upload-sarif@cdefb33c0f6224e58673d9004f47f7cb3e328b89 # ratchet:github/codeql-action/upload-sarif@v3
         with:
           sarif_file: result
           wait-for-processing: true
