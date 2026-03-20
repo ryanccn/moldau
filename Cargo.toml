@@ -34,7 +34,7 @@ serde = { version = "1.0.228", features = ["derive"] }
 serde_json = { version = "1.0.149", features = ["preserve_order"] }
 sha1-checked = "0.10.0"
 sha2 = "0.10.9"
-tar = "0.4.44"
+tar = "0.4.45"
 tempdir = "0.3.7"
 tokio = { version = "1.49.0", features = ["full"] }
 which = "8.0.0"
