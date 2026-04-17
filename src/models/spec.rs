@@ -231,7 +231,7 @@ impl fmt::Display for SpecVersion {
 
             Self::SemverReq(req) => req.to_string(),
 
-            Self::DistTag(tag) => tag.to_string(),
+            Self::DistTag(tag) => tag.clone(),
         })
     }
 }
@@ -259,62 +259,66 @@ impl Default for SpecVersion {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub enum SpecVersionIntegrity {
-    SHA512(Vec<u8>),
-    SHA384(Vec<u8>),
-    SHA256(Vec<u8>),
-    SHA224(Vec<u8>),
-    SHA1(Vec<u8>),
+pub struct SpecVersionIntegrity {
+    algorithm: &'static aws_lc_rs::digest::Algorithm,
+    digest: Vec<u8>,
 }
 
 impl SpecVersionIntegrity {
-    pub fn parse(s: &str) -> Result<Option<Self>> {
-        if let Some(hash) = s.strip_prefix("sha512.") {
-            Ok(Some(Self::SHA512(hex::decode(hash)?)))
-        } else if let Some(hash) = s.strip_prefix("sha384.") {
-            Ok(Some(Self::SHA384(hex::decode(hash)?)))
-        } else if let Some(hash) = s.strip_prefix("sha256.") {
-            Ok(Some(Self::SHA256(hex::decode(hash)?)))
-        } else if let Some(hash) = s.strip_prefix("sha224.") {
-            Ok(Some(Self::SHA224(hex::decode(hash)?)))
-        } else if let Some(hash) = s.strip_prefix("sha1.") {
-            Ok(Some(Self::SHA1(hex::decode(hash)?)))
-        } else {
-            Ok(None)
+    pub fn sha1(digest: Vec<u8>) -> Self {
+        Self {
+            algorithm: &aws_lc_rs::digest::SHA1_FOR_LEGACY_USE_ONLY,
+            digest,
         }
     }
 
-    pub fn verify(&self, bytes: &[u8]) -> Result<(), (String, String)> {
-        use sha1_checked::Sha1;
-        use sha2::{Digest as _, Sha224, Sha256, Sha384, Sha512};
-
-        let expected: &Vec<u8>;
-        let actual: Vec<u8>;
-
-        match self {
-            Self::SHA512(hash) => {
-                expected = hash;
-                actual = Sha512::digest(bytes).to_vec();
-            }
-            Self::SHA384(hash) => {
-                expected = hash;
-                actual = Sha384::digest(bytes).to_vec();
-            }
-            Self::SHA256(hash) => {
-                expected = hash;
-                actual = Sha256::digest(bytes).to_vec();
-            }
-            Self::SHA224(hash) => {
-                expected = hash;
-                actual = Sha224::digest(bytes).to_vec();
-            }
-            Self::SHA1(hash) => {
-                expected = hash;
-                actual = Sha1::digest(bytes).to_vec();
-            }
+    pub fn sha512(digest: Vec<u8>) -> Self {
+        Self {
+            algorithm: &aws_lc_rs::digest::SHA512,
+            digest,
         }
+    }
 
-        if expected == &actual {
+    pub fn parse(s: &str) -> Result<Option<Self>> {
+        use aws_lc_rs::digest::{SHA1_FOR_LEGACY_USE_ONLY, SHA224, SHA256, SHA384, SHA512};
+
+        Ok(if let Some(hash) = s.strip_prefix("sha512.") {
+            Some(Self {
+                algorithm: &SHA512,
+                digest: hex::decode(hash)?,
+            })
+        } else if let Some(hash) = s.strip_prefix("sha384.") {
+            Some(Self {
+                algorithm: &SHA384,
+                digest: hex::decode(hash)?,
+            })
+        } else if let Some(hash) = s.strip_prefix("sha256.") {
+            Some(Self {
+                algorithm: &SHA256,
+                digest: hex::decode(hash)?,
+            })
+        } else if let Some(hash) = s.strip_prefix("sha224.") {
+            Some(Self {
+                algorithm: &SHA224,
+                digest: hex::decode(hash)?,
+            })
+        } else if let Some(hash) = s.strip_prefix("sha1.") {
+            Some(Self {
+                algorithm: &SHA1_FOR_LEGACY_USE_ONLY,
+                digest: hex::decode(hash)?,
+            })
+        } else {
+            None
+        })
+    }
+
+    pub fn verify(&self, bytes: &[u8]) -> Result<(), (String, String)> {
+        use aws_lc_rs::{constant_time::verify_slices_are_equal, digest::digest};
+
+        let expected = &self.digest;
+        let actual = digest(self.algorithm, bytes);
+
+        if verify_slices_are_equal(expected, actual.as_ref()).is_ok() {
             Ok(())
         } else {
             Err((hex::encode(expected), hex::encode(actual)))
@@ -324,13 +328,23 @@ impl SpecVersionIntegrity {
 
 impl fmt::Display for SpecVersionIntegrity {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::SHA512(hash) => write!(f, "sha512.{}", hex::encode(hash)),
-            Self::SHA384(hash) => write!(f, "sha384.{}", hex::encode(hash)),
-            Self::SHA256(hash) => write!(f, "sha256.{}", hex::encode(hash)),
-            Self::SHA224(hash) => write!(f, "sha224.{}", hex::encode(hash)),
-            Self::SHA1(hash) => write!(f, "sha1.{}", hex::encode(hash)),
-        }
+        use aws_lc_rs::digest::{SHA1_FOR_LEGACY_USE_ONLY, SHA224, SHA256, SHA384, SHA512};
+
+        let algorithm = if self.algorithm == &SHA512 {
+            "sha512"
+        } else if self.algorithm == &SHA384 {
+            "sha384"
+        } else if self.algorithm == &SHA256 {
+            "sha256"
+        } else if self.algorithm == &SHA224 {
+            "sha224"
+        } else if self.algorithm == &SHA1_FOR_LEGACY_USE_ONLY {
+            "sha1"
+        } else {
+            return Err(fmt::Error);
+        };
+
+        write!(f, "{}.{}", algorithm, hex::encode(&self.digest))
     }
 }
 

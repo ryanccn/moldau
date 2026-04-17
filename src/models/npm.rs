@@ -150,9 +150,9 @@ impl NpmVersion {
                     .ok_or_else(|| eyre!("unexpected format in npm integrity: {integrity:?}"))?,
             )?;
 
-            Ok(SpecVersionIntegrity::SHA512(sha512))
+            Ok(SpecVersionIntegrity::sha512(sha512))
         } else {
-            Ok(SpecVersionIntegrity::SHA1(hex::decode(&self.dist.shasum)?))
+            Ok(SpecVersionIntegrity::sha1(hex::decode(&self.dist.shasum)?))
         }
     }
 
@@ -168,11 +168,8 @@ impl NpmVersion {
     }
 
     pub fn verify_signature(&self) -> Result<()> {
+        use aws_lc_rs::signature::{ECDSA_P256_SHA256_ASN1, ParsedPublicKey};
         use base64::prelude::{BASE64_STANDARD, Engine as _};
-        use p256::{
-            ecdsa::{Signature, VerifyingKey, signature::Verifier as _},
-            pkcs8::DecodePublicKey,
-        };
 
         if !Url::parse(NPM_REGISTRY.as_str()).is_ok_and(|url| {
             url.domain()
@@ -210,12 +207,14 @@ impl NpmVersion {
                 p256_message.extend_from_slice(b":");
                 p256_message.extend_from_slice(integrity_b);
 
-                let p256_public_key =
-                    VerifyingKey::from_public_key_der(&BASE64_STANDARD.decode(public_key.key)?)?;
+                let p256_public_key = ParsedPublicKey::new(
+                    &ECDSA_P256_SHA256_ASN1,
+                    &BASE64_STANDARD.decode(public_key.key)?,
+                )?;
 
-                let p256_signature = Signature::from_der(&BASE64_STANDARD.decode(&signature.sig)?)?;
+                let p256_signature = BASE64_STANDARD.decode(&signature.sig)?;
 
-                if let Err(err) = p256_public_key.verify(&p256_message, &p256_signature) {
+                if let Err(err) = p256_public_key.verify_sig(&p256_message, &p256_signature) {
                     bail!("ECDSA signature failed to verify for {self}: {err}");
                 } else {
                     debug!(

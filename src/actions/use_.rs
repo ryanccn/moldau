@@ -127,7 +127,7 @@ pub async fn use_(spec: &Spec) -> Result<()> {
     let mut version: semver::Version = version_data.version.parse()?;
 
     if spec.name == SpecName::Yarn {
-        use sha2::{Digest as _, Sha512};
+        use aws_lc_rs::digest::{SHA512, digest};
 
         // If the package manager is Yarn, we fetch the version and set the integrity
         // as the hash of the bin file, according to Corepack's special handling (see
@@ -142,10 +142,10 @@ pub async fn use_(spec: &Spec) -> Result<()> {
 
         let bin_contents = fs::read(cache_path.join(bin_path)).await?;
 
-        let sha512 = Sha512::digest(&bin_contents).to_vec();
+        let sha512 = digest(&SHA512, &bin_contents).as_ref().to_vec();
 
         version.build =
-            semver::BuildMetadata::new(&SpecVersionIntegrity::SHA512(sha512).to_string())?;
+            semver::BuildMetadata::new(&SpecVersionIntegrity::sha512(sha512).to_string())?;
     } else {
         // Otherwise, we set the integrity from data provided by the npm registry.
         version.build = semver::BuildMetadata::new(&version_data.integrity()?.to_string())?;

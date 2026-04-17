@@ -46,21 +46,21 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # ratchet:actions/checkout@v5
+        uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # ratchet:actions/checkout@v5
         with:
           persist-credentials: false
 
       - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@5d458579430fc14a04a08a1e7d3694f545e91ce6 # ratchet:dtolnay/rust-toolchain@stable
+        uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # ratchet:dtolnay/rust-toolchain@stable
         with:
           target: ${{ matrix.target }}
 
       - name: Setup Rust cache
-        uses: Swatinem/rust-cache@779680da715d629ac1d338a641029a2f4372abb5 # ratchet:Swatinem/rust-cache@v2
+        uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # ratchet:Swatinem/rust-cache@v2
         if: ${{ inputs.disable-cache != true }}
 
       - name: Install cargo-auditable
-        uses: taiki-e/install-action@2723513a70062521fb56e5df87a04967751efd2f # ratchet:taiki-e/install-action@v2
+        uses: taiki-e/install-action@a2352fc6ce487f030a3aa709482d57823eadfb37 # ratchet:taiki-e/install-action@v2
         with:
           tool: cargo-auditable
 
@@ -71,7 +71,7 @@ jobs:
           CARGO_PROFILE_RELEASE_CODEGEN_UNITS: "1"
 
       - name: Generate build provenance attestations
-        uses: actions/attest-build-provenance@96278af6caaf10aea03fd8d33a09a777ca52d62f # ratchet:actions/attest-build-provenance@v3
+        uses: actions/attest-build-provenance@977bb373ede98d70efdf65b84cb5f73e068dcc2a # ratchet:actions/attest-build-provenance@v3
         if: ${{ github.event_name != 'pull_request' }}
         with:
           subject-path: |
@@ -79,7 +79,7 @@ jobs:
             ./target/${{ matrix.target }}/release/moldau.exe
 
       - name: Upload artifacts
-        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # ratchet:actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # ratchet:actions/upload-artifact@v4
         with:
           if-no-files-found: "error"
           name: moldau-${{ matrix.target }}
@@ -107,7 +107,7 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # ratchet:actions/checkout@v5
+        uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # ratchet:actions/checkout@v5
         with:
           persist-credentials: false
 
@@ -118,13 +118,13 @@ jobs:
         run: nix build --fallback --print-build-logs '.#moldau-static-${{ matrix.target }}'
 
       - name: Generate build provenance attestations
-        uses: actions/attest-build-provenance@96278af6caaf10aea03fd8d33a09a777ca52d62f # ratchet:actions/attest-build-provenance@v3
+        uses: actions/attest-build-provenance@977bb373ede98d70efdf65b84cb5f73e068dcc2a # ratchet:actions/attest-build-provenance@v3
         if: ${{ github.event_name != 'pull_request' }}
         with:
           subject-path: ./result/bin/moldau
 
       - name: Upload artifact
-        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # ratchet:actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # ratchet:actions/upload-artifact@v4
         with:
           if-no-files-found: "error"
           name: moldau-${{ matrix.target }}
