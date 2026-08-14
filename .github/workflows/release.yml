@@ -25,6 +25,9 @@ jobs:
   crates-io:
     name: crates.io
     needs: build
+    permissions:
+      contents: write
+      id-token: write
 
     runs-on: ubuntu-latest
 
