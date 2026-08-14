@@ -7,7 +7,7 @@ mod exit_code_error;
 mod log_display;
 
 use eyre::Result;
-use std::{borrow::Cow, path::Path};
+use std::{borrow::Cow, env, path::Path, process::Command, sync::LazyLock};
 use tokio::fs;
 
 pub use download::*;
@@ -31,3 +31,15 @@ pub async fn find_root(path: &Path) -> Result<Cow<'_, Path>> {
         None => Ok(Cow::Borrowed(path)),
     }
 }
+
+pub static IS_MUSL: LazyLock<bool> = LazyLock::new(|| {
+    if env::consts::OS == "linux"
+        && let Ok(output) = Command::new("ldd").arg("--version").output()
+    {
+        String::from_utf8_lossy(&output.stdout)
+            .to_lowercase()
+            .contains("musl")
+    } else {
+        false
+    }
+});

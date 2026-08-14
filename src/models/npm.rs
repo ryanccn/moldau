@@ -86,7 +86,7 @@ impl NpmPackage {
         let mut url = Url::parse(&NPM_REGISTRY)?;
         url.path_segments_mut()
             .map_err(|()| eyre!("failed to construct npm registry URL"))?
-            .push(&spec.to_npm_package_name());
+            .push(&spec.to_npm_package_name()?);
 
         debug!("fetching npm package: {url}");
 
@@ -127,7 +127,7 @@ impl NpmVersion {
         let mut url = Url::parse(&NPM_REGISTRY)?;
         url.path_segments_mut()
             .map_err(|()| eyre!("failed to construct npm registry URL"))?
-            .push(&spec.to_npm_package_name())
+            .push(&spec.to_npm_package_name()?)
             .push(&format!("{:#}", spec.version));
 
         debug!("fetching npm version: {url}");
@@ -216,12 +216,12 @@ impl NpmVersion {
 
                 if let Err(err) = p256_public_key.verify_sig(&p256_message, &p256_signature) {
                     bail!("ECDSA signature failed to verify for {self}: {err}");
-                } else {
-                    debug!(
-                        "ECDSA signature verified for {self} (keyid: {})",
-                        public_key.keyid
-                    );
                 }
+
+                debug!(
+                    "ECDSA signature verified for {self} (keyid: {})",
+                    public_key.keyid
+                );
             }
         }
 

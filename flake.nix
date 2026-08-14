@@ -18,7 +18,7 @@
         includeShims = {
           default = false;
           value = ''
-            for shim in npm npx yarn yarnpkg pnpm pnpx; do
+            for shim in npm npx yarn yarnpkg pnpm pnpx pn pnx; do
               ln -s "$out/bin/moldau" "$out/bin/$shim"
             done
           '';

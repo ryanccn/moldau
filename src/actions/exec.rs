@@ -63,15 +63,22 @@ pub async fn exec(bin: SpecBin, args: &[String], spec: Option<&Spec>) -> Result<
 
     let (cache_path, bins) = super::prepare(&spec).await?;
 
-    let bin_path = bins
-        .get(&bin.to_string())
-        .ok_or_else(|| eyre!("could not obtain path of {bin:?} in {spec}"))?;
+    let status = if spec.name == SpecName::Pnpm && !spec.is_pnpm_pre_12() {
+        Command::new(cache_path.join("pnpm"))
+            .args(args)
+            .status()
+            .await?
+    } else {
+        let bin_path = bins
+            .get(&bin.to_string())
+            .ok_or_else(|| eyre!("could not obtain path of {bin:?} in {spec}"))?;
 
-    let status = Command::new("node")
-        .arg(cache_path.join(bin_path))
-        .args(args)
-        .status()
-        .await?;
+        Command::new("node")
+            .arg(cache_path.join(bin_path))
+            .args(args)
+            .status()
+            .await?
+    };
 
     if !status.success() {
         let code: u8 = status.code().and_then(|c| c.try_into().ok()).unwrap_or(1);

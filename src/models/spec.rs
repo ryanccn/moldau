@@ -13,6 +13,8 @@ use std::{
 };
 use tokio::fs;
 
+use crate::util;
+
 use super::{NpmVersion, PackageJson};
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -60,9 +62,23 @@ impl Spec {
         Ok(None)
     }
 
-    #[must_use]
-    pub fn to_npm_package_name(&self) -> String {
-        match self.name {
+    pub fn is_pnpm_pre_12(&self) -> bool {
+        match &self.version {
+            SpecVersion::Exact(v) => v.major < 12,
+            SpecVersion::SemverReq(r) => r.comparators.iter().any(|c| match c.op {
+                semver::Op::Exact
+                | semver::Op::LessEq
+                | semver::Op::Tilde
+                | semver::Op::Caret
+                | semver::Op::Less => c.major < 12,
+                _ => false,
+            }),
+            SpecVersion::DistTag(_) => false, // TODO: change this when pnpm 12 is released
+        }
+    }
+
+    pub fn to_npm_package_name(&self) -> Result<String> {
+        Ok(match self.name {
             SpecName::Npm => "npm".into(),
 
             SpecName::Yarn => {
@@ -91,8 +107,37 @@ impl Spec {
                 }
             }
 
-            SpecName::Pnpm => "pnpm".into(),
-        }
+            SpecName::Pnpm => {
+                if self.is_pnpm_pre_12() {
+                    "pnpm".into()
+                } else {
+                    match (env::consts::OS, env::consts::ARCH) {
+                        ("macos", "aarch64") => "@pnpm/exe.darwin-arm64",
+                        ("macos", "x86_64") => "@pnpm/exe.darwin-x64",
+                        ("windows", "aarch64") => "@pnpm/exe.win32-arm64",
+                        ("windows", "x86_64") => "@pnpm/exe.win32-x64",
+                        ("linux", "aarch64") => {
+                            if *util::IS_MUSL {
+                                "@pnpm/exe.linux-arm64-musl"
+                            } else {
+                                "@pnpm/exe.linux-arm64"
+                            }
+                        }
+                        ("linux", "x86_64") => {
+                            if *util::IS_MUSL {
+                                "@pnpm/exe.linux-x64-musl"
+                            } else {
+                                "@pnpm/exe.linux-x64"
+                            }
+                        }
+                        (os, arch) => {
+                            bail!("pnpm does not provide executables for {:?}", (os, arch));
+                        }
+                    }
+                    .into()
+                }
+            }
+        })
     }
 
     pub async fn verify_integrity(
@@ -356,6 +401,8 @@ pub enum SpecBin {
     Yarnpkg,
     Pnpm,
     Pnpx,
+    Pn,
+    Pnx,
 }
 
 impl SpecBin {
@@ -366,13 +413,15 @@ impl SpecBin {
         Self::Yarnpkg,
         Self::Pnpm,
         Self::Pnpx,
+        Self::Pn,
+        Self::Pnx,
     ];
 
     pub fn to_name(self) -> SpecName {
         match self {
             Self::Npm | Self::Npx => SpecName::Npm,
             Self::Yarn | Self::Yarnpkg => SpecName::Yarn,
-            Self::Pnpm | Self::Pnpx => SpecName::Pnpm,
+            Self::Pnpm | Self::Pnpx | Self::Pn | Self::Pnx => SpecName::Pnpm,
         }
     }
 }
@@ -425,4 +474,6 @@ impl_fromstr_display! {
     Yarnpkg = "yarnpkg",
     Pnpm = "pnpm",
     Pnpx = "pnpx",
+    Pn = "pn",
+    Pnx = "pnx",
 }
