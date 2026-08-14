@@ -5,7 +5,7 @@
 use std::{collections::HashMap, path::PathBuf};
 use tokio::fs;
 
-use eyre::{Result, bail};
+use eyre::Result;
 use log::warn;
 use owo_colors::colors::Blue;
 
@@ -14,38 +14,9 @@ use tempdir::TempDir;
 
 use crate::{
     dirs,
-    models::{NpmPackage, NpmVersion, PackageJsonBinOnly, Spec, SpecVersion},
+    models::{NpmVersion, PackageJsonBinOnly, Spec},
     util::{self, LogDisplay as _},
 };
-
-async fn resolve(spec: &Spec) -> Result<NpmVersion> {
-    match &spec.version {
-        SpecVersion::Exact(_) => {
-            let version_data = NpmVersion::fetch(spec).await?;
-            Ok(version_data)
-        }
-
-        SpecVersion::SemverReq(req) => {
-            let package = NpmPackage::fetch(spec).await?;
-
-            let Some(matching_version) = package.find_version_req(req) else {
-                bail!("could not find matching version for {spec}");
-            };
-
-            Ok(matching_version)
-        }
-
-        SpecVersion::DistTag(tag) => {
-            let package = NpmPackage::fetch(spec).await?;
-
-            let Some(matching_version) = package.find_dist_tag(tag) else {
-                bail!("could not find matching version for {spec}");
-            };
-
-            Ok(matching_version)
-        }
-    }
-}
 
 pub async fn fetch_version(
     spec: &Spec,
@@ -87,6 +58,6 @@ pub async fn fetch_version(
 }
 
 pub async fn fetch_spec(spec: &Spec) -> Result<(PathBuf, HashMap<String, String>)> {
-    let resolved_version = resolve(spec).await?;
+    let resolved_version = spec.resolve().await?;
     fetch_version(spec, &resolved_version).await
 }

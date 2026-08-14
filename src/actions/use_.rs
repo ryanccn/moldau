@@ -12,7 +12,7 @@ use serde::Serialize;
 
 use crate::{
     actions::fetch_version,
-    models::{NpmPackage, NpmVersion, Spec, SpecName, SpecVersion, SpecVersionIntegrity},
+    models::{Spec, SpecName, SpecVersion, SpecVersionIntegrity},
     util::LogDisplay as _,
 };
 
@@ -110,20 +110,7 @@ pub async fn use_(spec: &Spec) -> Result<()> {
         spec.log_display::<Blue>()
     );
 
-    let version_data = match &spec.version {
-        SpecVersion::Exact(_) => NpmVersion::fetch(spec).await?,
-
-        SpecVersion::SemverReq(req) => NpmPackage::fetch(spec)
-            .await?
-            .find_version_req(req)
-            .ok_or_else(|| eyre!("could not find matching version for {spec}"))?,
-
-        SpecVersion::DistTag(tag) => NpmPackage::fetch(spec)
-            .await?
-            .find_dist_tag(tag)
-            .ok_or_else(|| eyre!("could not find matching version for {spec}"))?,
-    };
-
+    let version_data = spec.resolve().await?;
     let mut version: semver::Version = version_data.version.parse()?;
 
     if spec.name == SpecName::Yarn {

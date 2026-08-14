@@ -13,7 +13,7 @@ use std::{
 };
 use tokio::fs;
 
-use crate::util;
+use crate::{models::NpmPackage, util};
 
 use super::{NpmVersion, PackageJson};
 
@@ -39,6 +39,12 @@ impl<'a> Iterator for SpecPathIterator<'a> {
     }
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum SpecContext {
+    Resolve,
+    Fetch,
+}
+
 impl Spec {
     pub async fn parse(traverse: bool) -> Result<Option<Self>> {
         let cwd = env::current_dir()?;
@@ -62,22 +68,7 @@ impl Spec {
         Ok(None)
     }
 
-    pub fn is_pnpm_pre_12(&self) -> bool {
-        match &self.version {
-            SpecVersion::Exact(v) => v.major < 12,
-            SpecVersion::SemverReq(r) => r.comparators.iter().any(|c| match c.op {
-                semver::Op::Exact
-                | semver::Op::LessEq
-                | semver::Op::Tilde
-                | semver::Op::Caret
-                | semver::Op::Less => c.major < 12,
-                _ => false,
-            }),
-            SpecVersion::DistTag(_) => false, // TODO: change this when pnpm 12 is released
-        }
-    }
-
-    pub fn to_npm_package_name(&self) -> Result<String> {
+    pub fn to_npm_package(&self, context: SpecContext) -> Result<String> {
         Ok(match self.name {
             SpecName::Npm => "npm".into(),
 
@@ -108,7 +99,9 @@ impl Spec {
             }
 
             SpecName::Pnpm => {
-                if self.is_pnpm_pre_12() {
+                if context == SpecContext::Resolve
+                    || self.version.exact().is_some_and(|v| v.major < 12)
+                {
                     "pnpm".into()
                 } else {
                     match (env::consts::OS, env::consts::ARCH) {
@@ -182,6 +175,67 @@ impl Spec {
 
         Ok(())
     }
+
+    pub async fn resolve(&self) -> Result<NpmVersion> {
+        match &self.version {
+            SpecVersion::Exact(_) => {
+                let version_data = NpmVersion::fetch(
+                    &self.to_npm_package(SpecContext::Fetch)?,
+                    &self.version.to_plain_string(),
+                )
+                .await?;
+                Ok(version_data)
+            }
+
+            SpecVersion::SemverReq(req) => {
+                let package =
+                    NpmPackage::fetch(&self.to_npm_package(SpecContext::Resolve)?).await?;
+
+                let Some(matching_version) = package.find_version_req(req) else {
+                    bail!("could not find matching version for {self}");
+                };
+
+                if matching_version.name == "pnpm"
+                    && let Ok(version) = semver::Version::parse(&matching_version.version)
+                    && version.major >= 12
+                {
+                    let version_data = NpmVersion::fetch(
+                        &self.to_npm_package(SpecContext::Fetch)?,
+                        &version.to_string(),
+                    )
+                    .await?;
+
+                    Ok(version_data)
+                } else {
+                    Ok(matching_version)
+                }
+            }
+
+            SpecVersion::DistTag(tag) => {
+                let package =
+                    NpmPackage::fetch(&self.to_npm_package(SpecContext::Resolve)?).await?;
+
+                let Some(matching_version) = package.find_dist_tag(tag) else {
+                    bail!("could not find matching version for {self}");
+                };
+
+                if matching_version.name == "pnpm"
+                    && let Ok(version) = semver::Version::parse(&matching_version.version)
+                    && version.major >= 12
+                {
+                    let version_data = NpmVersion::fetch(
+                        &self.to_npm_package(SpecContext::Fetch)?,
+                        &version.to_string(),
+                    )
+                    .await?;
+
+                    Ok(version_data)
+                } else {
+                    Ok(matching_version)
+                }
+            }
+        }
+    }
 }
 
 impl fmt::Display for Spec {
@@ -253,6 +307,25 @@ impl SpecVersion {
         matches!(self, Self::DistTag(_))
     }
 
+    pub fn exact(&self) -> Option<&semver::Version> {
+        match self {
+            Self::Exact(version) => Some(version),
+            &_ => None,
+        }
+    }
+
+    pub fn to_plain_string(&self) -> String {
+        match self {
+            Self::Exact(version) => {
+                let mut version = version.clone();
+                version.build = semver::BuildMetadata::EMPTY;
+                version.to_string()
+            }
+            Self::SemverReq(req) => req.to_string(),
+            Self::DistTag(tag) => tag.clone(),
+        }
+    }
+
     pub fn integrity(&self) -> Result<Option<SpecVersionIntegrity>> {
         match self {
             Self::Exact(v) => SpecVersionIntegrity::parse(&v.build),
@@ -264,18 +337,8 @@ impl SpecVersion {
 impl fmt::Display for SpecVersion {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.write_str(&match self {
-            Self::Exact(version) => {
-                if f.alternate() {
-                    let mut version = version.clone();
-                    version.build = semver::BuildMetadata::EMPTY;
-                    version.to_string()
-                } else {
-                    version.to_string()
-                }
-            }
-
+            Self::Exact(version) => version.to_string(),
             Self::SemverReq(req) => req.to_string(),
-
             Self::DistTag(tag) => tag.clone(),
         })
     }

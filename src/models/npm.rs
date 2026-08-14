@@ -13,7 +13,7 @@ use reqwest::{
 };
 use serde::Deserialize;
 
-use super::{Spec, SpecVersionIntegrity};
+use super::SpecVersionIntegrity;
 use crate::http::HTTP;
 
 static NPM_REGISTRY: LazyLock<String> = LazyLock::new(|| {
@@ -82,11 +82,11 @@ pub struct NpmVersionSignature {
 }
 
 impl NpmPackage {
-    pub async fn fetch(spec: &Spec) -> Result<Self> {
+    pub async fn fetch(package: &str) -> Result<Self> {
         let mut url = Url::parse(&NPM_REGISTRY)?;
         url.path_segments_mut()
             .map_err(|()| eyre!("failed to construct npm registry URL"))?
-            .push(&spec.to_npm_package_name()?);
+            .push(package);
 
         debug!("fetching npm package: {url}");
 
@@ -123,12 +123,12 @@ impl NpmPackage {
 }
 
 impl NpmVersion {
-    pub async fn fetch(spec: &Spec) -> Result<Self> {
+    pub async fn fetch(package: &str, version: &str) -> Result<Self> {
         let mut url = Url::parse(&NPM_REGISTRY)?;
         url.path_segments_mut()
             .map_err(|()| eyre!("failed to construct npm registry URL"))?
-            .push(&spec.to_npm_package_name()?)
-            .push(&format!("{:#}", spec.version));
+            .push(package)
+            .push(version);
 
         debug!("fetching npm version: {url}");
 
