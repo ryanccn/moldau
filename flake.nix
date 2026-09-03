@@ -14,15 +14,10 @@
       root = ./.;
       completions.enable = true;
 
-      extraPostInstall = {
-        includeShims = {
-          default = false;
-          value = ''
-            for shim in npm npx yarn yarnpkg pnpm pnpx pn pnx; do
-              ln -s "$out/bin/moldau" "$out/bin/$shim"
-            done
-          '';
-        };
-      };
+      extraPostInstall = ''
+        for shim in npm npx yarn yarnpkg pnpm pnpx pn pnx; do
+          ln -s "$out/bin/moldau" "$out/bin/$shim"
+        done
+      '';
     };
 }

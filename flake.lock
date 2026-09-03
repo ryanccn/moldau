@@ -2,11 +2,11 @@
   "nodes": {
     "ferrix": {
       "locked": {
-        "lastModified": 1773169879,
-        "narHash": "sha256-G2QsqjQXhyz/8W11FlWLRTq2ftFenbwEl0dbTspZans=",
+        "lastModified": 1788446265,
+        "narHash": "sha256-dmPDusdHkYaDXSOt+x//HKaXPTWFjMaWIkLQceIQJS8=",
         "owner": "ryanccn",
         "repo": "ferrix",
-        "rev": "a133d72dad219a6c16c12aea9202e2b0e8baff49",
+        "rev": "b574906d655188bb98889f138486817eabfb6154",
         "type": "github"
       },
       "original": {
@@ -17,11 +17,11 @@
     },
     "nixpkgs": {
       "locked": {
-        "lastModified": 1786534138,
-        "narHash": "sha256-fBJMdnKUTUDtfi/BYLr71HLaC9dG382arxLF2Egg2uo=",
+        "lastModified": 1788372231,
+        "narHash": "sha256-7aqErvrAEz/5OcPA5p3M+tVOqeYc4oJXkNIPXfCqxAw=",
         "owner": "NixOS",
         "repo": "nixpkgs",
-        "rev": "044bfe75bfe4c7bbe043dc17b5e42ea823b84a09",
+        "rev": "9387b3fcc0c23c86661636da63faabad4235a0a6",
         "type": "github"
       },
       "original": {
