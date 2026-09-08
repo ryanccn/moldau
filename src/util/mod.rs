@@ -19,7 +19,9 @@ pub async fn find_root(path: &Path) -> Result<Cow<'_, Path>> {
     let mut only_entry = None;
 
     while let Some(entry) = read_dir.next_entry().await?.map(|de| de.path()) {
-        if only_entry.is_some() || !entry.is_dir() {
+        let is_dir = fs::metadata(&entry).await.is_ok_and(|meta| meta.is_dir());
+
+        if only_entry.is_some() || !is_dir {
             return Ok(Cow::Borrowed(path));
         }
 
@@ -36,9 +38,11 @@ pub static IS_MUSL: LazyLock<bool> = LazyLock::new(|| {
     if env::consts::OS == "linux"
         && let Ok(output) = Command::new("ldd").arg("--version").output()
     {
-        String::from_utf8_lossy(&output.stdout)
-            .to_lowercase()
-            .contains("musl")
+        [&output.stdout, &output.stderr].into_iter().any(|stream| {
+            String::from_utf8_lossy(stream)
+                .to_lowercase()
+                .contains("musl")
+        })
     } else {
         false
     }

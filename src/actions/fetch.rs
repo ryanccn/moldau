@@ -14,7 +14,6 @@ use log::warn;
 use owo_colors::colors::Blue;
 
 use flate2::bufread::GzDecoder;
-use tempdir::TempDir;
 
 use crate::{
     dirs,
@@ -42,7 +41,7 @@ pub async fn fetch_version(
 
     let cache_dir = cache_versions_dir.join(release.version());
 
-    if cache_dir.exists() {
+    if fs::metadata(&cache_dir).await.is_ok() {
         warn!(
             "{:#} is already cached, not fetching",
             release.log_display::<Blue>()
@@ -52,7 +51,9 @@ pub async fn fetch_version(
         return Ok((cache_dir, bin));
     }
 
-    let unpack_dir = TempDir::new_in(dirs::cache(), "moldau-tmp")?;
+    let unpack_dir = tempfile::Builder::new()
+        .prefix("moldau-tmp")
+        .tempdir_in(dirs::cache())?;
 
     // Unpacking into a subdirectory keeps the temporary directory itself from becoming
     // the root that is moved into the cache.

@@ -2,10 +2,10 @@
 //
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-use std::{env, fmt};
+use std::{env, fmt, sync::LazyLock};
 
 use eyre::{Result, bail, eyre};
-use log::debug;
+use log::{debug, warn};
 use reqwest::{
     StatusCode, Url,
     header::{self, HeaderMap, HeaderValue},
@@ -17,28 +17,33 @@ use crate::http::HTTP;
 
 static GITHUB_API: &str = "https://api.github.com";
 
-fn github_common_headers() -> Result<HeaderMap> {
+static GITHUB_HEADERS: LazyLock<HeaderMap> = LazyLock::new(|| {
     let mut headers = HeaderMap::new();
-    headers.insert(header::ACCEPT, "application/vnd.github+json".parse()?);
+
+    headers.insert(
+        header::ACCEPT,
+        HeaderValue::from_static("application/vnd.github+json"),
+    );
 
     if let Ok(token) = env::var("GITHUB_TOKEN") {
-        let mut header: HeaderValue = format!("Bearer {token}").parse()?;
-        header.set_sensitive(true);
-        headers.insert(header::AUTHORIZATION, header);
+        match HeaderValue::try_from(format!("Bearer {token}")) {
+            Ok(mut header) => {
+                header.set_sensitive(true);
+                headers.insert(header::AUTHORIZATION, header);
+            }
+            Err(_) => {
+                warn!("`GITHUB_TOKEN` is not a valid header value, ignoring it");
+            }
+        }
     }
 
-    Ok(headers)
-}
+    headers
+});
 
-/// Fetches from the GitHub API, treating a missing resource as an absent result.
 async fn fetch<T: DeserializeOwned>(url: Url) -> Result<Option<T>> {
     debug!("fetching GitHub API: {url}");
 
-    let resp = HTTP
-        .get(url)
-        .headers(github_common_headers()?)
-        .send()
-        .await?;
+    let resp = HTTP.get(url).headers(GITHUB_HEADERS.clone()).send().await?;
 
     if resp.status() == StatusCode::NOT_FOUND {
         return Ok(None);

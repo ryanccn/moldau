@@ -5,6 +5,7 @@
 use eyre::{Result, bail};
 use std::{
     env,
+    ffi::OsString,
     io::{self, Write as _},
     path::{Path, PathBuf},
     process::ExitCode,
@@ -45,7 +46,7 @@ enum Commands {
 
         /// Arguments to pass to the package manager
         #[clap(trailing_var_arg = true, allow_hyphen_values = true)]
-        args: Vec<String>,
+        args: Vec<OsString>,
     },
 
     /// Use a package manager
@@ -121,7 +122,7 @@ async fn main_fallible() -> Result<()> {
 
     color_eyre::install()?;
 
-    let mut args = env::args();
+    let mut args = env::args_os();
     if let Some(bin) = args.next().and_then(|argv0| {
         Path::new(&argv0)
             .file_stem()

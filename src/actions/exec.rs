@@ -2,7 +2,7 @@
 //
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-use std::env;
+use std::{env, ffi::OsString};
 use tokio::process::Command;
 
 use eyre::{Result, eyre};
@@ -14,7 +14,7 @@ use crate::{
     util::{ExitCodeError, LogDisplay as _},
 };
 
-pub async fn exec(bin: SpecBin, args: &[String], spec: Option<&Spec>) -> Result<bool> {
+pub async fn exec(bin: SpecBin, args: &[OsString], spec: Option<&Spec>) -> Result<bool> {
     let bin_default_spec = Spec {
         name: bin.to_name(),
         version: SpecVersion::default(),
@@ -41,14 +41,16 @@ pub async fn exec(bin: SpecBin, args: &[String], spec: Option<&Spec>) -> Result<
         // currently configured package manager (since it is bundled with the Node.js
         // distribution, after all). Enforcing strictness for `npm` would break these projects.
 
+        let first_arg = args.first().and_then(|arg| arg.to_str());
+
         let transparent = bin == SpecBin::Npm
             || bin == SpecBin::Npx
             || bin == SpecBin::Pnpx
             || bin == SpecBin::Pnx
             || bin == SpecBin::Bunx
-            || args.first().is_some_and(|s| s == "init")
+            || first_arg == Some("init")
             || (bin_default_spec.name == SpecName::Yarn || bin_default_spec.name == SpecName::Pnpm)
-                && args.first().is_some_and(|s| s == "dlx");
+                && first_arg == Some("dlx");
 
         if disable_strict || transparent {
             spec = bin_default_spec;

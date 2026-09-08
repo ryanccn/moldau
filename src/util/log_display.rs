@@ -32,11 +32,9 @@ macro_rules! impl_fmt_trait {
         $(
             impl<T: $trait, C: Color> $trait for LogDisplayThing<T, C> {
                 fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-                    let backtick = "`".dimmed().to_string();
-
-                    f.write_str(&backtick)?;
+                    write!(f, "{}", "`".dimmed())?;
                     $trait::fmt(&self.inner.fg::<C>(), f)?;
-                    f.write_str(&backtick)?;
+                    write!(f, "{}", "`".dimmed())?;
 
                     Ok(())
                 }

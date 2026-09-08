@@ -12,7 +12,7 @@ use std::{
     path::{self, Path},
     str::FromStr,
 };
-use tokio::fs;
+use tokio::{fs, task};
 
 use crate::{models::NpmPackage, util};
 
@@ -50,13 +50,14 @@ impl SpecSource {
     async fn resolve(&self, version: &SpecVersion) -> Result<Option<Release>> {
         Ok(match self {
             Self::Npm(package) => match version {
-                SpecVersion::Exact(_) => {
-                    Some(NpmVersion::fetch(package, &version.to_plain_string()).await?)
+                // The registry resolves dist tags through this endpoint as well, which
+                // avoids fetching the entire packument.
+                SpecVersion::Exact(_) | SpecVersion::DistTag(_) => {
+                    NpmVersion::fetch(package, &version.to_plain_string()).await?
                 }
                 SpecVersion::SemverReq(req) => {
                     NpmPackage::fetch(package).await?.find_version_req(req)
                 }
-                SpecVersion::DistTag(tag) => NpmPackage::fetch(package).await?.find_dist_tag(tag),
             }
             .map(Release::Npm),
 
@@ -205,6 +206,28 @@ impl Spec {
         })
     }
 
+    /// The path, relative to a release's unpacked root, of the file whose hash is recorded
+    /// as the integrity of the release, when it is not the hash of the release itself.
+    ///
+    /// This special handling for Yarn is inherited from Corepack. Corepack downloads Yarn
+    /// as a file rather than as a package, and calculates the hash from that file. We
+    /// download the package, but calculate the hash for the file anyway for the sake of
+    /// compatibility.
+    pub fn integrity_path<'a>(&self, release: &'a Release) -> Result<Option<&'a str>> {
+        if let Release::Npm(version) = release
+            && self.name == SpecName::Yarn
+        {
+            let bin_path = version
+                .bin
+                .get("yarn")
+                .ok_or_else(|| eyre!("could not resolve yarn bin path in {version}"))?;
+
+            Ok(Some(bin_path))
+        } else {
+            Ok(None)
+        }
+    }
+
     pub async fn verify_integrity(
         &self,
         bytes: &[u8],
@@ -228,22 +251,9 @@ impl Spec {
                 );
             }
         } else {
-            // This special handling of integrity verification for Yarn is inherited from
-            // Corepack. Corepack downloads Yarn as a file rather than a package, and
-            // calculates the hash from that file. We download the package, but calculate
-            // the hash for the file anyway for the sake of compatibility.
-
-            let bytes = if let Release::Npm(version) = &resolution.release
-                && self.name == SpecName::Yarn
-            {
-                let bin_path = version
-                    .bin
-                    .get("yarn")
-                    .ok_or_else(|| eyre!("could not resolve yarn bin path in {version}"))?;
-
-                Cow::Owned(fs::read(unpack_root.join(bin_path)).await?)
-            } else {
-                Cow::Borrowed(bytes)
+            let bytes = match self.integrity_path(&resolution.release)? {
+                Some(path) => Cow::Owned(fs::read(unpack_root.join(path)).await?),
+                None => Cow::Borrowed(bytes),
             };
 
             if let Err((expected, actual)) = integrity.verify(&bytes) {
@@ -259,10 +269,17 @@ impl Spec {
     }
 
     pub async fn resolve(&self) -> Result<Resolution> {
-        let mut resolved: Option<(semver::Version, Release)> = None;
+        let mut tasks = task::JoinSet::new();
 
         for source in self.sources()? {
-            let Some(release) = source.resolve(&self.version).await? else {
+            let version = self.version.clone();
+            tasks.spawn(async move { source.resolve(&version).await });
+        }
+
+        let mut resolved: Option<(semver::Version, Release)> = None;
+
+        for release in tasks.join_all().await {
+            let Some(release) = release? else {
                 continue;
             };
 
@@ -335,8 +352,6 @@ pub enum SpecName {
 }
 
 impl SpecName {
-    pub const VARIANTS: &[Self] = &[Self::Npm, Self::Yarn, Self::Pnpm, Self::Bun];
-
     /// The file name of the executable in releases that provide one instead of a package.
     #[must_use]
     pub fn standalone_bin(self) -> &'static str {
@@ -457,6 +472,18 @@ pub struct SpecVersionIntegrity {
     digest: Vec<u8>,
 }
 
+static ALGORITHMS: &[(&str, &aws_lc_rs::digest::Algorithm)] = {
+    use aws_lc_rs::digest::{SHA1_FOR_LEGACY_USE_ONLY, SHA224, SHA256, SHA384, SHA512};
+
+    &[
+        ("sha512", &SHA512),
+        ("sha384", &SHA384),
+        ("sha256", &SHA256),
+        ("sha224", &SHA224),
+        ("sha1", &SHA1_FOR_LEGACY_USE_ONLY),
+    ]
+};
+
 impl SpecVersionIntegrity {
     pub fn sha1(digest: Vec<u8>) -> Self {
         Self {
@@ -480,36 +507,16 @@ impl SpecVersionIntegrity {
     }
 
     pub fn parse(s: &str) -> Result<Option<Self>> {
-        use aws_lc_rs::digest::{SHA1_FOR_LEGACY_USE_ONLY, SHA224, SHA256, SHA384, SHA512};
+        for &(name, algorithm) in ALGORITHMS {
+            if let Some(hash) = s.strip_prefix(name).and_then(|rest| rest.strip_prefix('.')) {
+                return Ok(Some(Self {
+                    algorithm,
+                    digest: hex::decode(hash)?,
+                }));
+            }
+        }
 
-        Ok(if let Some(hash) = s.strip_prefix("sha512.") {
-            Some(Self {
-                algorithm: &SHA512,
-                digest: hex::decode(hash)?,
-            })
-        } else if let Some(hash) = s.strip_prefix("sha384.") {
-            Some(Self {
-                algorithm: &SHA384,
-                digest: hex::decode(hash)?,
-            })
-        } else if let Some(hash) = s.strip_prefix("sha256.") {
-            Some(Self {
-                algorithm: &SHA256,
-                digest: hex::decode(hash)?,
-            })
-        } else if let Some(hash) = s.strip_prefix("sha224.") {
-            Some(Self {
-                algorithm: &SHA224,
-                digest: hex::decode(hash)?,
-            })
-        } else if let Some(hash) = s.strip_prefix("sha1.") {
-            Some(Self {
-                algorithm: &SHA1_FOR_LEGACY_USE_ONLY,
-                digest: hex::decode(hash)?,
-            })
-        } else {
-            None
-        })
+        Ok(None)
     }
 
     pub fn verify(&self, bytes: &[u8]) -> Result<(), (String, String)> {
@@ -528,23 +535,14 @@ impl SpecVersionIntegrity {
 
 impl fmt::Display for SpecVersionIntegrity {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        use aws_lc_rs::digest::{SHA1_FOR_LEGACY_USE_ONLY, SHA224, SHA256, SHA384, SHA512};
-
-        let algorithm = if self.algorithm == &SHA512 {
-            "sha512"
-        } else if self.algorithm == &SHA384 {
-            "sha384"
-        } else if self.algorithm == &SHA256 {
-            "sha256"
-        } else if self.algorithm == &SHA224 {
-            "sha224"
-        } else if self.algorithm == &SHA1_FOR_LEGACY_USE_ONLY {
-            "sha1"
-        } else {
+        let Some(&(name, _)) = ALGORITHMS
+            .iter()
+            .find(|&&(_, algorithm)| algorithm == self.algorithm)
+        else {
             return Err(fmt::Error);
         };
 
-        write!(f, "{}.{}", algorithm, hex::encode(&self.digest))
+        write!(f, "{}.{}", name, hex::encode(&self.digest))
     }
 }
 
@@ -563,19 +561,6 @@ pub enum SpecBin {
 }
 
 impl SpecBin {
-    pub const VARIANTS: &[Self] = &[
-        Self::Npm,
-        Self::Npx,
-        Self::Yarn,
-        Self::Yarnpkg,
-        Self::Pnpm,
-        Self::Pnpx,
-        Self::Pn,
-        Self::Pnx,
-        Self::Bun,
-        Self::Bunx,
-    ];
-
     pub fn to_name(self) -> SpecName {
         match self {
             Self::Npm | Self::Npx => SpecName::Npm,
@@ -609,6 +594,10 @@ impl clap::ValueEnum for SpecBin {
 
 macro_rules! impl_fromstr_display {
     ($enum:ident, $($member:ident = $string:expr),+ $(,)?) => {
+        impl $enum {
+            pub const VARIANTS: &[Self] = &[$(Self::$member),+];
+        }
+
         impl FromStr for $enum {
             type Err = eyre::Report;
 

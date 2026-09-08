@@ -6,12 +6,12 @@ use std::{collections::HashMap, env, fmt, sync::LazyLock};
 
 use base64::prelude::{BASE64_STANDARD, Engine as _};
 use eyre::{Result, bail, eyre};
-use log::debug;
+use log::{debug, warn};
 use reqwest::{
-    Url,
+    StatusCode, Url,
     header::{self, HeaderMap, HeaderValue},
 };
-use serde::Deserialize;
+use serde::{Deserialize, de::DeserializeOwned};
 
 use super::SpecVersionIntegrity;
 use crate::http::HTTP;
@@ -23,32 +23,69 @@ static NPM_REGISTRY: LazyLock<String> = LazyLock::new(|| {
 static NPM_INSTALL_HEADER_ACCEPT: &str =
     "application/vnd.npm.install-v1+json; q=1.0, application/json; q=0.8, */*";
 
-fn npm_common_headers() -> Result<HeaderMap> {
-    let mut headers = HeaderMap::new();
-    headers.insert(header::ACCEPT, NPM_INSTALL_HEADER_ACCEPT.parse()?);
-
-    if let Ok(token) = env::var("COREPACK_NPM_TOKEN") {
-        let mut header: HeaderValue = format!("Bearer {token}").parse()?;
-        header.set_sensitive(true);
-        headers.insert(header::AUTHORIZATION, header);
+fn npm_auth_header() -> Option<HeaderValue> {
+    let credential = if let Ok(token) = env::var("COREPACK_NPM_TOKEN") {
+        format!("Bearer {token}")
     } else if let Ok(username) = env::var("COREPACK_NPM_USERNAME")
         && let Ok(password) = env::var("COREPACK_NPM_PASSWORD")
     {
-        let encoded = BASE64_STANDARD.encode(format!("{username}:{password}"));
+        format!(
+            "Basic {}",
+            BASE64_STANDARD.encode(format!("{username}:{password}"))
+        )
+    } else {
+        return None;
+    };
 
-        let mut header: HeaderValue = format!("Basic {encoded}").parse()?;
+    if let Ok(mut header) = HeaderValue::try_from(credential) {
         header.set_sensitive(true);
+        Some(header)
+    } else {
+        warn!("npm registry credentials are not a valid header value, ignoring them");
+        None
+    }
+}
+
+static NPM_HEADERS: LazyLock<HeaderMap> = LazyLock::new(|| {
+    let mut headers = HeaderMap::new();
+
+    headers.insert(
+        header::ACCEPT,
+        HeaderValue::from_static(NPM_INSTALL_HEADER_ACCEPT),
+    );
+
+    if let Some(header) = npm_auth_header() {
         headers.insert(header::AUTHORIZATION, header);
     }
 
-    Ok(headers)
+    headers
+});
+
+async fn fetch<T: DeserializeOwned>(url: Url) -> Result<Option<T>> {
+    debug!("fetching npm registry: {url}");
+
+    let resp = HTTP.get(url).headers(NPM_HEADERS.clone()).send().await?;
+
+    if resp.status() == StatusCode::NOT_FOUND {
+        return Ok(None);
+    }
+
+    Ok(Some(resp.error_for_status()?.json().await?))
+}
+
+fn registry_url(segments: &[&str]) -> Result<Url> {
+    let mut url = Url::parse(&NPM_REGISTRY)?;
+
+    url.path_segments_mut()
+        .map_err(|()| eyre!("failed to construct npm registry URL"))?
+        .extend(segments);
+
+    Ok(url)
 }
 
 #[derive(Deserialize, Clone, Debug)]
-#[serde(rename_all = "kebab-case")]
 pub struct NpmPackage {
     pub versions: HashMap<String, NpmVersion>,
-    pub dist_tags: HashMap<String, String>,
 }
 
 #[derive(Deserialize, Clone, Debug)]
@@ -83,63 +120,25 @@ pub struct NpmVersionSignature {
 
 impl NpmPackage {
     pub async fn fetch(package: &str) -> Result<Self> {
-        let mut url = Url::parse(&NPM_REGISTRY)?;
-        url.path_segments_mut()
-            .map_err(|()| eyre!("failed to construct npm registry URL"))?
-            .push(package);
-
-        debug!("fetching npm package: {url}");
-
-        Ok(HTTP
-            .get(url)
-            .headers(npm_common_headers()?)
-            .send()
+        fetch(registry_url(&[package])?)
             .await?
-            .error_for_status()?
-            .json()
-            .await?)
+            .ok_or_else(|| eyre!("{package} does not exist in the npm registry"))
     }
 
     #[must_use]
     pub fn find_version_req(&self, req: &semver::VersionReq) -> Option<NpmVersion> {
-        let mut parsed_versions = self
-            .versions
+        self.versions
             .iter()
             .filter_map(|(k, v)| semver::Version::parse(k).ok().map(|s| (s, v)))
             .filter(|(k, _)| req.matches(k))
-            .collect::<Vec<_>>();
-
-        parsed_versions.sort_unstable_by(|a, b| a.0.cmp_precedence(&b.0));
-        parsed_versions.last().map(|a| a.1).cloned()
-    }
-
-    #[must_use]
-    pub fn find_dist_tag(&self, dist_tag: &str) -> Option<NpmVersion> {
-        self.dist_tags
-            .get(dist_tag)
-            .and_then(|v| self.versions.get(v.as_str()))
-            .cloned()
+            .max_by(|a, b| a.0.cmp_precedence(&b.0))
+            .map(|(_, version)| version.clone())
     }
 }
 
 impl NpmVersion {
-    pub async fn fetch(package: &str, version: &str) -> Result<Self> {
-        let mut url = Url::parse(&NPM_REGISTRY)?;
-        url.path_segments_mut()
-            .map_err(|()| eyre!("failed to construct npm registry URL"))?
-            .push(package)
-            .push(version);
-
-        debug!("fetching npm version: {url}");
-
-        Ok(HTTP
-            .get(url)
-            .headers(npm_common_headers()?)
-            .send()
-            .await?
-            .error_for_status()?
-            .json()
-            .await?)
+    pub async fn fetch(package: &str, version: &str) -> Result<Option<Self>> {
+        fetch(registry_url(&[package, version])?).await
     }
 
     pub fn integrity(&self) -> Result<SpecVersionIntegrity> {

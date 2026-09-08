@@ -12,29 +12,18 @@ use serde::Serialize;
 
 use crate::{
     actions::fetch_version,
-    models::{Release, Spec, SpecName, SpecVersion, SpecVersionIntegrity},
+    models::{Spec, SpecVersion, SpecVersionIntegrity},
     util::LogDisplay as _,
 };
 
 fn detect_indent(s: Option<&str>) -> String {
-    if let Some(lines) = s.map(|s| s.lines()) {
-        for line in lines {
-            let mut whitespace_chs: Vec<char> = Vec::new();
-
-            for ch in line.chars() {
-                if !ch.is_whitespace() {
-                    break;
-                }
-                whitespace_chs.push(ch);
-            }
-
-            if !whitespace_chs.is_empty() {
-                return whitespace_chs.into_iter().collect::<String>();
-            }
-        }
-    }
-
-    "  ".to_string()
+    s.and_then(|s| {
+        s.lines().find_map(|line| {
+            let indent = &line[..line.len() - line.trim_start().len()];
+            (!indent.is_empty()).then(|| indent.to_owned())
+        })
+    })
+    .unwrap_or_else(|| "  ".to_string())
 }
 
 fn detect_eol(s: Option<&str>) -> String {
@@ -113,21 +102,11 @@ pub async fn use_(spec: &Spec) -> Result<()> {
     let resolution = spec.resolve().await?;
     let mut version: semver::Version = resolution.release.version().parse()?;
 
-    let integrity = if let Release::Npm(version_data) = &resolution.release
-        && spec.name == SpecName::Yarn
-    {
+    let integrity = if let Some(bin_path) = spec.integrity_path(&resolution.release)? {
         use aws_lc_rs::digest::{SHA512, digest};
 
-        // Yarn from the npm registry takes its integrity from the hash of the bin file,
-        // for compatibility with Corepack.
-
+        // The hash can only be calculated from the unpacked contents of the release.
         let (cache_path, _) = fetch_version(spec, &resolution).await?;
-
-        let bin_path = version_data
-            .bin
-            .get("yarn")
-            .ok_or_else(|| eyre!("could not resolve yarn bin path in {version_data}"))?;
-
         let bin_contents = fs::read(cache_path.join(bin_path)).await?;
 
         Some(SpecVersionIntegrity::sha512(
