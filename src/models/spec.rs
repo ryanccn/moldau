@@ -7,6 +7,7 @@ use eyre::{Result, bail, eyre};
 use log::debug;
 
 use std::{
+    borrow::Cow,
     env, fmt, iter,
     path::{self, Path},
     str::FromStr,
@@ -15,7 +16,7 @@ use tokio::fs;
 
 use crate::{models::NpmPackage, util};
 
-use super::{NpmVersion, PackageJson};
+use super::{GithubSource, NpmVersion, PackageJson, Release, Resolution};
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Spec {
@@ -39,10 +40,29 @@ impl<'a> Iterator for SpecPathIterator<'a> {
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum SpecContext {
-    Resolve,
-    Fetch,
+#[derive(Clone, Debug)]
+enum SpecSource {
+    Npm(String),
+    Github(GithubSource),
+}
+
+impl SpecSource {
+    async fn resolve(&self, version: &SpecVersion) -> Result<Option<Release>> {
+        Ok(match self {
+            Self::Npm(package) => match version {
+                SpecVersion::Exact(_) => {
+                    Some(NpmVersion::fetch(package, &version.to_plain_string()).await?)
+                }
+                SpecVersion::SemverReq(req) => {
+                    NpmPackage::fetch(package).await?.find_version_req(req)
+                }
+                SpecVersion::DistTag(tag) => NpmPackage::fetch(package).await?.find_dist_tag(tag),
+            }
+            .map(Release::Npm),
+
+            Self::Github(source) => source.resolve(version).await?.map(Release::Github),
+        })
+    }
 }
 
 impl Spec {
@@ -68,68 +88,120 @@ impl Spec {
         Ok(None)
     }
 
-    pub fn to_npm_package(&self, context: SpecContext) -> Result<String> {
+    /// The sources that this specification is resolved through.
+    fn sources(&self) -> Result<Vec<SpecSource>> {
         Ok(match self.name {
-            SpecName::Npm => "npm".into(),
+            SpecName::Npm => vec![SpecSource::Npm("npm".into())],
 
             SpecName::Yarn => {
-                let is_classic = match &self.version {
-                    SpecVersion::Exact(v) => v.major <= 1,
-                    SpecVersion::SemverReq(r) => r.comparators.iter().any(|c| match c.op {
-                        semver::Op::Exact
-                        | semver::Op::LessEq
-                        | semver::Op::Tilde
-                        | semver::Op::Caret => c.major <= 1,
-                        semver::Op::Less => {
-                            c.major <= 1
-                                || c.major == 2
-                                    && c.minor.is_none_or(|n| n == 0)
-                                    && c.patch.is_none_or(|n| n == 0)
-                        }
-                        _ => false,
-                    }),
-                    SpecVersion::DistTag(_) => false,
-                };
+                // A specification that is not constrained to a single major version range
+                // can match a version from either source.
 
-                if is_classic {
-                    "yarn".into()
+                let npm = SpecSource::Npm(
+                    if self.version.is_below_major(2) {
+                        "yarn"
+                    } else {
+                        "@yarnpkg/cli-dist"
+                    }
+                    .into(),
+                );
+
+                let zpm = match (env::consts::OS, env::consts::ARCH) {
+                    ("macos", "aarch64") => Some("aarch64-apple-darwin"),
+                    ("linux", "aarch64") => Some("aarch64-unknown-linux-musl"),
+                    ("linux", "x86_64") => Some("x86_64-unknown-linux-musl"),
+                    ("linux", "x86") => Some("i686-unknown-linux-musl"),
+                    _ => None,
+                }
+                .map(|target| {
+                    SpecSource::Github(GithubSource {
+                        repo: "yarnpkg/zpm",
+                        tag_prefix: "v",
+                        asset: format!("yarn-{target}.zip"),
+                    })
+                });
+
+                if self.version.is_below_major(6) {
+                    vec![npm]
+                } else if self.version.is_exact() {
+                    vec![zpm.ok_or_else(|| {
+                        eyre!(
+                            "Yarn does not provide executables for {:?}",
+                            (env::consts::OS, env::consts::ARCH)
+                        )
+                    })?]
                 } else {
-                    "@yarnpkg/cli-dist".into()
+                    iter::once(npm).chain(zpm).collect()
                 }
             }
 
-            SpecName::Pnpm => {
-                if context == SpecContext::Resolve
-                    || self.version.exact().is_some_and(|v| v.major < 12)
-                {
-                    "pnpm".into()
-                } else {
+            SpecName::Pnpm => vec![SpecSource::Npm("pnpm".into())],
+
+            SpecName::Bun => vec![SpecSource::Github(GithubSource {
+                repo: "oven-sh/bun",
+                tag_prefix: "bun-v",
+                asset: format!(
+                    "bun-{}.zip",
                     match (env::consts::OS, env::consts::ARCH) {
-                        ("macos", "aarch64") => "@pnpm/exe.darwin-arm64",
-                        ("macos", "x86_64") => "@pnpm/exe.darwin-x64",
-                        ("windows", "aarch64") => "@pnpm/exe.win32-arm64",
-                        ("windows", "x86_64") => "@pnpm/exe.win32-x64",
-                        ("linux", "aarch64") => {
+                        ("macos", "aarch64") => "darwin-aarch64",
+                        ("macos", "x86_64") => "darwin-x64",
+                        ("windows", "aarch64") => "windows-aarch64",
+                        ("windows", "x86_64") => "windows-x64",
+                        ("linux", "aarch64") =>
                             if *util::IS_MUSL {
-                                "@pnpm/exe.linux-arm64-musl"
+                                "linux-aarch64-musl"
                             } else {
-                                "@pnpm/exe.linux-arm64"
-                            }
-                        }
-                        ("linux", "x86_64") => {
+                                "linux-aarch64"
+                            },
+                        ("linux", "x86_64") =>
                             if *util::IS_MUSL {
-                                "@pnpm/exe.linux-x64-musl"
+                                "linux-x64-musl"
                             } else {
-                                "@pnpm/exe.linux-x64"
-                            }
-                        }
+                                "linux-x64"
+                            },
                         (os, arch) => {
-                            bail!("pnpm does not provide executables for {:?}", (os, arch));
+                            bail!("Bun does not provide executables for {:?}", (os, arch));
                         }
                     }
-                    .into()
+                ),
+            })],
+        })
+    }
+
+    /// The source that a resolved version is fetched from, when it differs from the
+    /// sources that the specification is resolved through.
+    fn fetch_source(&self, version: &semver::Version) -> Result<Option<SpecSource>> {
+        Ok(if self.name == SpecName::Pnpm && version.major >= 12 {
+            // The platform-specific packages are only discoverable through the
+            // `pnpm` package.
+            Some(SpecSource::Npm(
+                match (env::consts::OS, env::consts::ARCH) {
+                    ("macos", "aarch64") => "@pnpm/exe.darwin-arm64",
+                    ("macos", "x86_64") => "@pnpm/exe.darwin-x64",
+                    ("windows", "aarch64") => "@pnpm/exe.win32-arm64",
+                    ("windows", "x86_64") => "@pnpm/exe.win32-x64",
+                    ("linux", "aarch64") => {
+                        if *util::IS_MUSL {
+                            "@pnpm/exe.linux-arm64-musl"
+                        } else {
+                            "@pnpm/exe.linux-arm64"
+                        }
+                    }
+                    ("linux", "x86_64") => {
+                        if *util::IS_MUSL {
+                            "@pnpm/exe.linux-x64-musl"
+                        } else {
+                            "@pnpm/exe.linux-x64"
+                        }
+                    }
+                    (os, arch) => {
+                        bail!("pnpm does not provide executables for {:?}", (os, arch));
+                    }
                 }
-            }
+                .into(),
+            ))
+        } else {
+            None
         })
     }
 
@@ -137,104 +209,90 @@ impl Spec {
         &self,
         bytes: &[u8],
         unpack_root: &Path,
-        version: &NpmVersion,
+        resolution: &Resolution,
     ) -> Result<()> {
-        // This special handling of integrity verification for Yarn is inherited from
-        // Corepack. Corepack downloads Yarn as a file rather than a package, and
-        // calculates the hash from that file. We download the package, but calculate
-        // the hash for the file anyway for the sake of compatibility.
+        let Some(integrity) = self.version.integrity()? else {
+            return Ok(());
+        };
 
-        if self.name == SpecName::Yarn {
-            if let Some(integrity) = self.version.integrity()? {
+        if let Some(resolved) = &resolution.resolved {
+            // The contents of the resolved release are never downloaded, so the recorded
+            // integrity is compared against the one its registry reports.
+
+            let reported = resolved.integrity()?;
+
+            if reported.as_ref() != Some(&integrity) {
+                bail!(
+                    "integrity (spec) failed to verify for {self} (expected: {integrity}, actual: {})",
+                    reported.map_or_else(|| "none".to_owned(), |i| i.to_string())
+                );
+            }
+        } else {
+            // This special handling of integrity verification for Yarn is inherited from
+            // Corepack. Corepack downloads Yarn as a file rather than a package, and
+            // calculates the hash from that file. We download the package, but calculate
+            // the hash for the file anyway for the sake of compatibility.
+
+            let bytes = if let Release::Npm(version) = &resolution.release
+                && self.name == SpecName::Yarn
+            {
                 let bin_path = version
                     .bin
                     .get("yarn")
                     .ok_or_else(|| eyre!("could not resolve yarn bin path in {version}"))?;
 
-                let bin_contents = fs::read(unpack_root.join(bin_path)).await?;
+                Cow::Owned(fs::read(unpack_root.join(bin_path)).await?)
+            } else {
+                Cow::Borrowed(bytes)
+            };
 
-                if let Err((expected, actual)) = integrity.verify(&bin_contents) {
-                    bail!(
-                        "integrity (spec) failed to verify for {self} (expected: {expected}, actual: {actual})"
-                    );
-                }
-
-                debug!("integrity (spec) verified for {self}");
-            }
-        } else {
-            if let Some(integrity) = self.version.integrity()?
-                && let Err((expected, actual)) = integrity.verify(bytes)
-            {
+            if let Err((expected, actual)) = integrity.verify(&bytes) {
                 bail!(
                     "integrity (spec) failed to verify for {self} (expected: {expected}, actual: {actual})"
                 );
             }
-
-            debug!("integrity (spec) verified for {self}");
         }
+
+        debug!("integrity (spec) verified for {self}");
 
         Ok(())
     }
 
-    pub async fn resolve(&self) -> Result<NpmVersion> {
-        match &self.version {
-            SpecVersion::Exact(_) => {
-                let version_data = NpmVersion::fetch(
-                    &self.to_npm_package(SpecContext::Fetch)?,
-                    &self.version.to_plain_string(),
-                )
-                .await?;
-                Ok(version_data)
-            }
+    pub async fn resolve(&self) -> Result<Resolution> {
+        let mut resolved: Option<(semver::Version, Release)> = None;
 
-            SpecVersion::SemverReq(req) => {
-                let package =
-                    NpmPackage::fetch(&self.to_npm_package(SpecContext::Resolve)?).await?;
+        for source in self.sources()? {
+            let Some(release) = source.resolve(&self.version).await? else {
+                continue;
+            };
 
-                let Some(matching_version) = package.find_version_req(req) else {
-                    bail!("could not find matching version for {self}");
-                };
+            let version = release.version().parse::<semver::Version>()?;
 
-                if matching_version.name == "pnpm"
-                    && let Ok(version) = semver::Version::parse(&matching_version.version)
-                    && version.major >= 12
-                {
-                    let version_data = NpmVersion::fetch(
-                        &self.to_npm_package(SpecContext::Fetch)?,
-                        &version.to_string(),
-                    )
-                    .await?;
-
-                    Ok(version_data)
-                } else {
-                    Ok(matching_version)
-                }
-            }
-
-            SpecVersion::DistTag(tag) => {
-                let package =
-                    NpmPackage::fetch(&self.to_npm_package(SpecContext::Resolve)?).await?;
-
-                let Some(matching_version) = package.find_dist_tag(tag) else {
-                    bail!("could not find matching version for {self}");
-                };
-
-                if matching_version.name == "pnpm"
-                    && let Ok(version) = semver::Version::parse(&matching_version.version)
-                    && version.major >= 12
-                {
-                    let version_data = NpmVersion::fetch(
-                        &self.to_npm_package(SpecContext::Fetch)?,
-                        &version.to_string(),
-                    )
-                    .await?;
-
-                    Ok(version_data)
-                } else {
-                    Ok(matching_version)
-                }
+            if resolved
+                .as_ref()
+                .is_none_or(|(best, _)| best.cmp_precedence(&version).is_lt())
+            {
+                resolved = Some((version, release));
             }
         }
+
+        let Some((version, release)) = resolved else {
+            bail!("could not find matching version for {self}");
+        };
+
+        Ok(match self.fetch_source(&version)? {
+            Some(source) => Resolution {
+                release: source
+                    .resolve(&SpecVersion::Exact(version))
+                    .await?
+                    .ok_or_else(|| eyre!("could not find matching version for {self}"))?,
+                resolved: Some(release),
+            },
+            None => Resolution {
+                release,
+                resolved: None,
+            },
+        })
     }
 }
 
@@ -273,10 +331,23 @@ pub enum SpecName {
     Npm,
     Yarn,
     Pnpm,
+    Bun,
 }
 
 impl SpecName {
-    pub const VARIANTS: &[Self] = &[Self::Npm, Self::Yarn, Self::Pnpm];
+    pub const VARIANTS: &[Self] = &[Self::Npm, Self::Yarn, Self::Pnpm, Self::Bun];
+
+    /// The file name of the executable in releases that provide one instead of a package.
+    #[must_use]
+    pub fn standalone_bin(self) -> &'static str {
+        match self {
+            Self::Npm => "npm",
+            // The `yarn` executable alongside it is a version manager of its own.
+            Self::Yarn => "yarn-bin",
+            Self::Pnpm => "pnpm",
+            Self::Bun => "bun",
+        }
+    }
 }
 
 impl clap::ValueEnum for SpecName {
@@ -307,10 +378,24 @@ impl SpecVersion {
         matches!(self, Self::DistTag(_))
     }
 
-    pub fn exact(&self) -> Option<&semver::Version> {
+    /// Whether this specification is constrained to versions below a major version.
+    #[must_use]
+    pub fn is_below_major(&self, major: u64) -> bool {
         match self {
-            Self::Exact(version) => Some(version),
-            &_ => None,
+            Self::Exact(version) => version.major < major,
+            Self::SemverReq(req) => req.comparators.iter().any(|c| match c.op {
+                semver::Op::Exact | semver::Op::LessEq | semver::Op::Tilde | semver::Op::Caret => {
+                    c.major < major
+                }
+                semver::Op::Less => {
+                    c.major < major
+                        || c.major == major
+                            && c.minor.is_none_or(|n| n == 0)
+                            && c.patch.is_none_or(|n| n == 0)
+                }
+                _ => false,
+            }),
+            Self::DistTag(_) => false,
         }
     }
 
@@ -376,6 +461,13 @@ impl SpecVersionIntegrity {
     pub fn sha1(digest: Vec<u8>) -> Self {
         Self {
             algorithm: &aws_lc_rs::digest::SHA1_FOR_LEGACY_USE_ONLY,
+            digest,
+        }
+    }
+
+    pub fn sha256(digest: Vec<u8>) -> Self {
+        Self {
+            algorithm: &aws_lc_rs::digest::SHA256,
             digest,
         }
     }
@@ -466,6 +558,8 @@ pub enum SpecBin {
     Pnpx,
     Pn,
     Pnx,
+    Bun,
+    Bunx,
 }
 
 impl SpecBin {
@@ -478,6 +572,8 @@ impl SpecBin {
         Self::Pnpx,
         Self::Pn,
         Self::Pnx,
+        Self::Bun,
+        Self::Bunx,
     ];
 
     pub fn to_name(self) -> SpecName {
@@ -485,6 +581,18 @@ impl SpecBin {
             Self::Npm | Self::Npx => SpecName::Npm,
             Self::Yarn | Self::Yarnpkg => SpecName::Yarn,
             Self::Pnpm | Self::Pnpx | Self::Pn | Self::Pnx => SpecName::Pnpm,
+            Self::Bun | Self::Bunx => SpecName::Bun,
+        }
+    }
+
+    /// The arguments that this binary prepends when it is an alias for a subcommand.
+    #[must_use]
+    pub fn to_args(self) -> &'static [&'static str] {
+        match self {
+            Self::Npm | Self::Yarn | Self::Yarnpkg | Self::Pnpm | Self::Pn | Self::Bun => &[],
+            Self::Npx => &["exec"],
+            Self::Pnpx | Self::Pnx => &["dlx"],
+            Self::Bunx => &["x"],
         }
     }
 }
@@ -527,6 +635,7 @@ impl_fromstr_display! {
     Npm = "npm",
     Yarn = "yarn",
     Pnpm = "pnpm",
+    Bun = "bun",
 }
 
 impl_fromstr_display! {
@@ -539,4 +648,6 @@ impl_fromstr_display! {
     Pnpx = "pnpx",
     Pn = "pn",
     Pnx = "pnx",
+    Bun = "bun",
+    Bunx = "bunx",
 }

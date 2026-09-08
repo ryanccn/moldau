@@ -2,7 +2,8 @@
 //
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-use std::collections::HashMap;
+use std::{collections::HashMap, path::Path};
+use tokio::{fs, io};
 
 use eyre::{Result, bail};
 use serde::Deserialize;
@@ -69,4 +70,15 @@ impl PackageJson {
 pub struct PackageJsonBinOnly {
     #[serde(default)]
     pub bin: HashMap<String, String>,
+}
+
+impl PackageJsonBinOnly {
+    /// Reads the binaries provided by a package, which is empty when there is no manifest.
+    pub async fn read(dir: &Path) -> Result<HashMap<String, String>> {
+        match fs::read(dir.join("package.json")).await {
+            Ok(data) => Ok(serde_json::from_slice::<Self>(&data)?.bin),
+            Err(err) if err.kind() == io::ErrorKind::NotFound => Ok(HashMap::new()),
+            Err(err) => Err(err.into()),
+        }
+    }
 }

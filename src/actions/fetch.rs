@@ -2,8 +2,12 @@
 //
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-use std::{collections::HashMap, path::PathBuf};
-use tokio::fs;
+use std::{
+    collections::HashMap,
+    io::Cursor,
+    path::{Path, PathBuf},
+};
+use tokio::{fs, task};
 
 use eyre::Result;
 use log::warn;
@@ -14,50 +18,73 @@ use tempdir::TempDir;
 
 use crate::{
     dirs,
-    models::{NpmVersion, PackageJsonBinOnly, Spec},
+    models::{PackageJsonBinOnly, Release, Resolution, Spec},
     util::{self, LogDisplay as _},
 };
 
+fn unpack(release: &Release, bytes: &[u8], dest: &Path) -> Result<()> {
+    match release {
+        Release::Npm(_) => tar::Archive::new(GzDecoder::new(bytes)).unpack(dest)?,
+        Release::Github(_) => zip::ZipArchive::new(Cursor::new(bytes))?.extract(dest)?,
+    }
+
+    Ok(())
+}
+
 pub async fn fetch_version(
     spec: &Spec,
-    version: &NpmVersion,
+    resolution: &Resolution,
 ) -> Result<(PathBuf, HashMap<String, String>)> {
+    let release = &resolution.release;
+
     let cache_versions_dir = dirs::cache().join("versions").join(spec.name.to_string());
     fs::create_dir_all(&cache_versions_dir).await?;
 
-    let cache_dir = cache_versions_dir.join(&version.version);
+    let cache_dir = cache_versions_dir.join(release.version());
 
     if cache_dir.exists() {
         warn!(
             "{:#} is already cached, not fetching",
-            version.log_display::<Blue>()
+            release.log_display::<Blue>()
         );
 
-        let package_json = fs::read(cache_dir.join("package.json")).await?;
-        let PackageJsonBinOnly { bin } = serde_json::from_slice(&package_json)?;
-
+        let bin = PackageJsonBinOnly::read(&cache_dir).await?;
         return Ok((cache_dir, bin));
     }
 
     let unpack_dir = TempDir::new_in(dirs::cache(), "moldau-tmp")?;
 
-    let bytes = util::download(&version.to_string(), &version.dist.tarball).await?;
+    // Unpacking into a subdirectory keeps the temporary directory itself from becoming
+    // the root that is moved into the cache.
+    let unpack_target = unpack_dir.path().join("root");
 
-    version.verify_integrity(&bytes)?;
-    version.verify_signature()?;
+    let bytes = util::download(&release.to_string(), release.url()).await?;
 
-    tar::Archive::new(GzDecoder::new(&bytes[..])).unpack(&unpack_dir)?;
-    let unpack_root = util::find_root(unpack_dir.path()).await?;
+    release.verify(&bytes)?;
 
-    spec.verify_integrity(&bytes, &unpack_root, version).await?;
+    let bytes = task::spawn_blocking({
+        let release = release.clone();
+        let unpack_target = unpack_target.clone();
+
+        move || -> Result<Vec<u8>> {
+            unpack(&release, &bytes, &unpack_target)?;
+            Ok(bytes)
+        }
+    })
+    .await??;
+
+    let unpack_root = util::find_root(&unpack_target).await?;
+
+    spec.verify_integrity(&bytes, &unpack_root, resolution)
+        .await?;
 
     fs::rename(unpack_root, &cache_dir).await?;
     unpack_dir.close()?;
 
-    Ok((cache_dir, version.bin.clone()))
+    Ok((cache_dir, release.bin()))
 }
 
 pub async fn fetch_spec(spec: &Spec) -> Result<(PathBuf, HashMap<String, String>)> {
-    let resolved_version = spec.resolve().await?;
-    fetch_version(spec, &resolved_version).await
+    let resolution = spec.resolve().await?;
+    fetch_version(spec, &resolution).await
 }

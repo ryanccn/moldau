@@ -12,7 +12,7 @@ use serde::Serialize;
 
 use crate::{
     actions::fetch_version,
-    models::{Spec, SpecName, SpecVersion, SpecVersionIntegrity},
+    models::{Release, Spec, SpecName, SpecVersion, SpecVersionIntegrity},
     util::LogDisplay as _,
 };
 
@@ -110,17 +110,18 @@ pub async fn use_(spec: &Spec) -> Result<()> {
         spec.log_display::<Blue>()
     );
 
-    let version_data = spec.resolve().await?;
-    let mut version: semver::Version = version_data.version.parse()?;
+    let resolution = spec.resolve().await?;
+    let mut version: semver::Version = resolution.release.version().parse()?;
 
-    if spec.name == SpecName::Yarn {
+    let integrity = if let Release::Npm(version_data) = &resolution.release
+        && spec.name == SpecName::Yarn
+    {
         use aws_lc_rs::digest::{SHA512, digest};
 
-        // If the package manager is Yarn, we fetch the version and set the integrity
-        // as the hash of the bin file, according to Corepack's special handling (see
-        // `src/actions/fetch.rs` for related details).
+        // Yarn from the npm registry takes its integrity from the hash of the bin file,
+        // for compatibility with Corepack.
 
-        let (cache_path, _) = fetch_version(spec, &version_data).await?;
+        let (cache_path, _) = fetch_version(spec, &resolution).await?;
 
         let bin_path = version_data
             .bin
@@ -129,13 +130,19 @@ pub async fn use_(spec: &Spec) -> Result<()> {
 
         let bin_contents = fs::read(cache_path.join(bin_path)).await?;
 
-        let sha512 = digest(&SHA512, &bin_contents).as_ref().to_vec();
-
-        version.build =
-            semver::BuildMetadata::new(&SpecVersionIntegrity::sha512(sha512).to_string())?;
+        Some(SpecVersionIntegrity::sha512(
+            digest(&SHA512, &bin_contents).as_ref().to_vec(),
+        ))
+    } else if resolution.pinned().is_platform_specific() {
+        // An integrity is left out when it could only be verified on the platform it was
+        // recorded on.
+        None
     } else {
-        // Otherwise, we set the integrity from data provided by the npm registry.
-        version.build = semver::BuildMetadata::new(&version_data.integrity()?.to_string())?;
+        resolution.pinned().integrity()?
+    };
+
+    if let Some(integrity) = integrity {
+        version.build = semver::BuildMetadata::new(&integrity.to_string())?;
     }
 
     let resolved_spec = Spec {

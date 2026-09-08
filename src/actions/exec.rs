@@ -44,6 +44,8 @@ pub async fn exec(bin: SpecBin, args: &[String], spec: Option<&Spec>) -> Result<
         let transparent = bin == SpecBin::Npm
             || bin == SpecBin::Npx
             || bin == SpecBin::Pnpx
+            || bin == SpecBin::Pnx
+            || bin == SpecBin::Bunx
             || args.first().is_some_and(|s| s == "init")
             || (bin_default_spec.name == SpecName::Yarn || bin_default_spec.name == SpecName::Pnpm)
                 && args.first().is_some_and(|s| s == "dlx");
@@ -63,8 +65,9 @@ pub async fn exec(bin: SpecBin, args: &[String], spec: Option<&Spec>) -> Result<
 
     let (cache_path, bins) = super::prepare(&spec).await?;
 
-    let status = if spec.name == SpecName::Pnpm && bins.is_empty() {
-        Command::new(cache_path.join("pnpm"))
+    let status = if bins.is_empty() {
+        Command::new(cache_path.join(spec.name.standalone_bin()))
+            .args(bin.to_args())
             .args(args)
             .status()
             .await?

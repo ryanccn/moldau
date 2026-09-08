@@ -47,9 +47,7 @@ pub async fn prepare(spec: &Spec) -> Result<(PathBuf, HashMap<String, String>)> 
     if let Some(cache_ok_version) = cached_ok_versions.last() {
         let cache_dir = cache_versions_dir.join(cache_ok_version.to_string());
 
-        let package_json = fs::read(cache_dir.join("package.json")).await?;
-        let PackageJsonBinOnly { bin } = serde_json::from_slice(&package_json)?;
-
+        let bin = PackageJsonBinOnly::read(&cache_dir).await?;
         return Ok((cache_dir, bin));
     }
 
