@@ -2,33 +2,52 @@
 //
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-use std::{path::PathBuf, sync::LazyLock};
-
-use etcetera::{AppStrategy, AppStrategyArgs, app_strategy, choose_app_strategy};
+use std::{env, path::PathBuf, sync::LazyLock};
 
 use crate::models::SpecName;
 
-#[cfg(not(windows))]
-type AppStrategyType = app_strategy::Xdg;
-#[cfg(windows)]
-type AppStrategyType = app_strategy::Windows;
-
-static STRATEGY: LazyLock<AppStrategyType> = LazyLock::new(|| {
-    choose_app_strategy(AppStrategyArgs {
-        app_name: "moldau".to_string(),
-        ..Default::default()
-    })
-    .unwrap()
-});
-
+pub static APP_NAME: &str = "moldau";
 pub static TEMP_PREFIX: &str = "moldau-tmp";
 
-pub fn data() -> PathBuf {
-    STRATEGY.data_dir()
+static HOME: LazyLock<PathBuf> =
+    LazyLock::new(|| env::home_dir().expect("locate the home directory"));
+
+#[cfg(not(windows))]
+fn xdg_dir(var: &str, default: &str) -> PathBuf {
+    env::var_os(var)
+        .map(PathBuf::from)
+        .filter(|path| path.is_absolute())
+        .unwrap_or_else(|| HOME.join(default))
+        .join(APP_NAME)
 }
 
+#[cfg(windows)]
+fn appdata_dir(var: &str, default: &str, kind: &str) -> PathBuf {
+    env::var_os(var)
+        .filter(|value| !value.is_empty())
+        .map_or_else(|| HOME.join("AppData").join(default), PathBuf::from)
+        .join(APP_NAME)
+        .join(kind)
+}
+
+#[cfg(not(windows))]
+pub fn data() -> PathBuf {
+    xdg_dir("XDG_DATA_HOME", ".local/share")
+}
+
+#[cfg(not(windows))]
 pub fn cache() -> PathBuf {
-    STRATEGY.cache_dir()
+    xdg_dir("XDG_CACHE_HOME", ".cache")
+}
+
+#[cfg(windows)]
+pub fn data() -> PathBuf {
+    appdata_dir("APPDATA", "Roaming", "data")
+}
+
+#[cfg(windows)]
+pub fn cache() -> PathBuf {
+    appdata_dir("LOCALAPPDATA", "Local", "cache")
 }
 
 pub fn versions(name: SpecName) -> PathBuf {

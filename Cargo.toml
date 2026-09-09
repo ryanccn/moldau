@@ -21,7 +21,6 @@ clap = { version = "4.6.6", features = ["derive", "string"] }
 clap_complete = "4.6.9"
 color-eyre = { version = "0.6.5", default-features = false }
 env_logger = "0.11.11"
-etcetera = "0.11.0"
 eyre = "0.6.14"
 flate2 = "1.1.10"
 hex = "0.4.3"
