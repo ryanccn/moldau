@@ -27,7 +27,7 @@ use crate::{
 };
 
 #[derive(Parser, Clone, Debug)]
-#[command(version, about, long_about = None, args_conflicts_with_subcommands = true)]
+#[command(version, about, long_about = None, subcommand_required = true)]
 struct Cli {
     #[command(subcommand)]
     command: Commands,

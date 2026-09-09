@@ -5,9 +5,9 @@
 use std::{env, ffi::OsString};
 use tokio::process::Command;
 
-use eyre::{Result, eyre};
-use log::{error, warn};
-use owo_colors::colors::{Red, Yellow};
+use eyre::{Result, bail, eyre};
+use log::warn;
+use owo_colors::colors::Yellow;
 
 use crate::{
     models::{OnFail, Spec, SpecBin, SpecName, SpecVersion},
@@ -58,13 +58,7 @@ pub async fn exec(bin: SpecBin, args: &[OsString], spec: Option<&Spec>) -> Resul
                 // Fetching the configured package manager leaves a mismatch of names
                 // unresolved, so `download` refuses as `error` does.
                 OnFail::Download | OnFail::Error => {
-                    error!(
-                        "{} is not available in the configured package manager {}",
-                        bin.log_display::<Red>(),
-                        spec.log_display::<Red>()
-                    );
-
-                    return Ok(false);
+                    bail!("{bin} is not available in the configured package manager {spec}",);
                 }
 
                 OnFail::Warn => {

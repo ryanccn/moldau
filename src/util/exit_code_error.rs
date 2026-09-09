@@ -38,7 +38,9 @@ impl<T> ToExitCode for Result<T, eyre::Report> {
                 if let Some(code) = err.downcast_ref::<ExitCodeError>() {
                     code.0
                 } else {
-                    anstream::eprint!("Error: {err:?}");
+                    log::error!("{err}");
+                    anstream::eprint!("{err:?}");
+
                     ExitCode::FAILURE
                 }
             }
