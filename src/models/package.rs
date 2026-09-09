@@ -30,14 +30,15 @@ enum DevEnginesPackageManagers {
     Many(Vec<DevEnginesPackageManager>),
 }
 
-/// What a `devEngines.packageManager` entry asks for when its package manager is not cached.
+/// What a `devEngines.packageManager` entry asks for when its package manager is not the one
+/// at hand: when it is not cached, and when another one is invoked in its place.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum OnFail {
     #[default]
     Download,
     Warn,
     Error,
-    /// Asks for the mismatch to go unreported, so it fetches as [`OnFail::Download`] does.
+    /// Leaves the mismatch unreported and unenforced.
     Ignore,
 }
 

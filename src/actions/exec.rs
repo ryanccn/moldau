@@ -6,8 +6,8 @@ use std::{env, ffi::OsString};
 use tokio::process::Command;
 
 use eyre::{Result, eyre};
-use log::error;
-use owo_colors::colors::Red;
+use log::{error, warn};
+use owo_colors::colors::{Red, Yellow};
 
 use crate::{
     models::{OnFail, Spec, SpecBin, SpecName, SpecVersion},
@@ -53,18 +53,34 @@ pub async fn exec(bin: SpecBin, args: &[OsString], spec: Option<&Spec>) -> Resul
             || (bin_default_spec.name == SpecName::Yarn || bin_default_spec.name == SpecName::Pnpm)
                 && first_arg == Some("dlx");
 
-        if disable_strict || transparent {
-            spec = bin_default_spec;
-            on_fail = OnFail::default();
-        } else {
-            error!(
-                "{} is not available in the configured package manager {}",
-                bin.log_display::<Red>(),
-                spec.log_display::<Red>()
-            );
+        if !(disable_strict || transparent) {
+            match on_fail {
+                // Fetching the configured package manager leaves a mismatch of names
+                // unresolved, so `download` refuses as `error` does.
+                OnFail::Download | OnFail::Error => {
+                    error!(
+                        "{} is not available in the configured package manager {}",
+                        bin.log_display::<Red>(),
+                        spec.log_display::<Red>()
+                    );
 
-            return Ok(false);
+                    return Ok(false);
+                }
+
+                OnFail::Warn => {
+                    warn!(
+                        "{} is not the configured package manager {}",
+                        bin.log_display::<Yellow>(),
+                        spec.log_display::<Yellow>()
+                    );
+                }
+
+                OnFail::Ignore => {}
+            }
         }
+
+        spec = bin_default_spec;
+        on_fail = OnFail::default();
     }
 
     let (cache_path, bins) = super::prepare(&spec, on_fail).await?;
