@@ -2,11 +2,7 @@
 //
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-use std::{
-    collections::{BTreeSet, HashMap},
-    path::PathBuf,
-};
-use tokio::fs;
+use std::{collections::HashMap, path::PathBuf};
 
 use eyre::{Result, bail};
 use log::{info, warn};
@@ -20,32 +16,25 @@ use crate::{
 };
 
 pub async fn prepare(spec: &Spec, on_fail: OnFail) -> Result<(PathBuf, HashMap<String, String>)> {
-    let cache_versions_dir = dirs::cache().join("versions").join(spec.name.to_string());
-
-    let mut cached_ok_versions = BTreeSet::new();
-
     // There is no way of knowing if a cached version matches a dist tag
-    if !spec.version.is_dist_tag()
-        && let Ok(mut read_dir) = fs::read_dir(&cache_versions_dir).await
-    {
-        while let Some(entry) = read_dir.next_entry().await? {
-            if let Ok(this_version) = semver::Version::parse(&entry.file_name().to_string_lossy())
-                && match &spec.version {
-                    SpecVersion::Exact(version) => {
-                        // `Version::cmp_precedence` discards build metadata, unlike `==`
-                        this_version.cmp_precedence(version).is_eq()
-                    }
-                    SpecVersion::SemverReq(req) => req.matches(&this_version),
-                    SpecVersion::DistTag(_) => false,
+    let cache_ok_version = if spec.version.is_dist_tag() {
+        None
+    } else {
+        super::cached_versions(spec.name)
+            .await?
+            .into_iter()
+            .rfind(|this_version| match &spec.version {
+                SpecVersion::Exact(version) => {
+                    // `Version::cmp_precedence` discards build metadata, unlike `==`
+                    this_version.cmp_precedence(version).is_eq()
                 }
-            {
-                cached_ok_versions.insert(this_version);
-            }
-        }
-    }
+                SpecVersion::SemverReq(req) => req.matches(this_version),
+                SpecVersion::DistTag(_) => false,
+            })
+    };
 
-    if let Some(cache_ok_version) = cached_ok_versions.last() {
-        let cache_dir = cache_versions_dir.join(cache_ok_version.to_string());
+    if let Some(cache_ok_version) = cache_ok_version {
+        let cache_dir = dirs::versions(spec.name).join(cache_ok_version.to_string());
 
         let bin = PackageJsonBinOnly::read(&cache_dir).await?;
         return Ok((cache_dir, bin));

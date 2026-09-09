@@ -53,35 +53,22 @@ async fn write_package_json(spec: &Spec) -> Result<()> {
     let package_json_path = env::current_dir()?.join("package.json");
 
     let contents = match fs::read_to_string(&package_json_path).await {
-        Ok(contents) => {
-            if contents.trim().is_empty() {
-                None
-            } else {
-                Some(contents)
-            }
-        }
-        Err(err) => {
-            if err.kind() == io::ErrorKind::NotFound {
-                None
-            } else {
-                return Err(err.into());
-            }
-        }
+        Ok(contents) => Some(contents).filter(|contents| !contents.trim().is_empty()),
+        Err(err) if err.kind() == io::ErrorKind::NotFound => None,
+        Err(err) => return Err(err.into()),
     };
 
-    let (indent, eol) = (
-        detect_indent(contents.as_deref()),
-        detect_eol(contents.as_deref()),
-    );
+    let source = contents.as_deref();
 
-    let location = contents
-        .as_deref()
+    let (indent, eol) = (detect_indent(source), detect_eol(source));
+
+    let location = source
         .map(serde_json::from_str::<PackageJson>)
         .transpose()?
         .and_then(|manifest| manifest.dev_engines_location(Some(spec.name)));
 
-    let mut value = match contents {
-        Some(contents) => serde_json::from_str::<Value>(&contents)?,
+    let mut value = match source {
+        Some(contents) => serde_json::from_str::<Value>(contents)?,
         None => serde_json::json!({}),
     };
 

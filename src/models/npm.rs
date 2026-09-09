@@ -6,15 +6,15 @@ use std::{collections::HashMap, env, fmt, sync::LazyLock};
 
 use base64::prelude::{BASE64_STANDARD, Engine as _};
 use eyre::{Result, bail, eyre};
-use log::{debug, warn};
+use log::debug;
 use reqwest::{
-    StatusCode, Url,
+    Url,
     header::{self, HeaderMap, HeaderValue},
 };
 use serde::{Deserialize, de::DeserializeOwned};
 
 use super::SpecVersionIntegrity;
-use crate::http::HTTP;
+use crate::http;
 
 static NPM_REGISTRY: LazyLock<String> = LazyLock::new(|| {
     env::var("COREPACK_NPM_REGISTRY").unwrap_or_else(|_| "https://registry.npmjs.org".to_string())
@@ -37,13 +37,7 @@ fn npm_auth_header() -> Option<HeaderValue> {
         return None;
     };
 
-    if let Ok(mut header) = HeaderValue::try_from(credential) {
-        header.set_sensitive(true);
-        Some(header)
-    } else {
-        warn!("npm registry credentials are not a valid header value, ignoring them");
-        None
-    }
+    http::sensitive_header(credential, "npm registry credentials")
 }
 
 static NPM_HEADERS: LazyLock<HeaderMap> = LazyLock::new(|| {
@@ -62,15 +56,7 @@ static NPM_HEADERS: LazyLock<HeaderMap> = LazyLock::new(|| {
 });
 
 async fn fetch<T: DeserializeOwned>(url: Url) -> Result<Option<T>> {
-    debug!("fetching npm registry: {url}");
-
-    let resp = HTTP.get(url).headers(NPM_HEADERS.clone()).send().await?;
-
-    if resp.status() == StatusCode::NOT_FOUND {
-        return Ok(None);
-    }
-
-    Ok(Some(resp.error_for_status()?.json().await?))
+    http::fetch_json("npm registry", url, &NPM_HEADERS).await
 }
 
 fn registry_url(segments: &[&str]) -> Result<Url> {
@@ -168,7 +154,6 @@ impl NpmVersion {
 
     pub fn verify_signature(&self) -> Result<()> {
         use aws_lc_rs::signature::{ECDSA_P256_SHA256_ASN1, ParsedPublicKey};
-        use base64::prelude::{BASE64_STANDARD, Engine as _};
 
         if !Url::parse(NPM_REGISTRY.as_str()).is_ok_and(|url| {
             url.domain()
@@ -183,28 +168,12 @@ impl NpmVersion {
                 .iter()
                 .find(|key| key.keyid == signature.keyid)
             {
-                let name_b = self.name.as_bytes();
-                let version_b = self.version.as_bytes();
-                let integrity_b = self
-                    .dist
-                    .integrity
-                    .as_deref()
-                    .unwrap_or_default()
-                    .as_bytes();
-
-                let mut p256_message = Vec::with_capacity(
-                    name_b
-                        .len()
-                        .saturating_add(version_b.len())
-                        .saturating_add(integrity_b.len())
-                        .saturating_add(2),
+                let p256_message = format!(
+                    "{}@{}:{}",
+                    self.name,
+                    self.version,
+                    self.dist.integrity.as_deref().unwrap_or_default()
                 );
-
-                p256_message.extend_from_slice(name_b);
-                p256_message.extend_from_slice(b"@");
-                p256_message.extend_from_slice(version_b);
-                p256_message.extend_from_slice(b":");
-                p256_message.extend_from_slice(integrity_b);
 
                 let p256_public_key = ParsedPublicKey::new(
                     &ECDSA_P256_SHA256_ASN1,
@@ -213,7 +182,9 @@ impl NpmVersion {
 
                 let p256_signature = BASE64_STANDARD.decode(&signature.sig)?;
 
-                if let Err(err) = p256_public_key.verify_sig(&p256_message, &p256_signature) {
+                if let Err(err) =
+                    p256_public_key.verify_sig(p256_message.as_bytes(), &p256_signature)
+                {
                     bail!("ECDSA signature failed to verify for {self}: {err}");
                 }
 

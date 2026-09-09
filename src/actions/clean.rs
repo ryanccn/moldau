@@ -2,7 +2,7 @@
 //
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-use std::{collections::BTreeSet, time::Duration};
+use std::time::Duration;
 use tokio::fs;
 
 use eyre::Result;
@@ -51,19 +51,9 @@ async fn clean_temp() -> Result<usize> {
 }
 
 pub async fn clean(all: bool) -> Result<()> {
-    let all_versions_path = dirs::cache().join("versions");
-
     for name in SpecName::VARIANTS {
-        let mut cached_versions: BTreeSet<semver::Version> = BTreeSet::new();
-        let versions_path = all_versions_path.join(name.to_string());
-
-        if let Ok(mut read_dir) = fs::read_dir(&versions_path).await {
-            while let Some(entry) = read_dir.next_entry().await? {
-                if let Ok(version) = semver::Version::parse(&entry.file_name().to_string_lossy()) {
-                    cached_versions.insert(version);
-                }
-            }
-        }
+        let versions_path = dirs::versions(*name);
+        let mut cached_versions = super::cached_versions(*name).await?;
 
         if !all {
             cached_versions.pop_last();
@@ -79,11 +69,7 @@ pub async fn clean(all: bool) -> Result<()> {
             "removed {} versions of {}{}",
             cached_versions.len().green(),
             name.log_display::<Blue>(),
-            if all {
-                " (including latest)".dimmed().to_string()
-            } else {
-                String::new()
-            }
+            if all { " (including latest)" } else { "" }.dimmed()
         );
     }
 

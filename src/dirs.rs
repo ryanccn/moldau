@@ -6,6 +6,8 @@ use std::{path::PathBuf, sync::LazyLock};
 
 use etcetera::{AppStrategy, AppStrategyArgs, app_strategy, choose_app_strategy};
 
+use crate::models::SpecName;
+
 #[cfg(not(windows))]
 type AppStrategyType = app_strategy::Xdg;
 #[cfg(windows)]
@@ -27,4 +29,8 @@ pub fn data() -> PathBuf {
 
 pub fn cache() -> PathBuf {
     STRATEGY.cache_dir()
+}
+
+pub fn versions(name: SpecName) -> PathBuf {
+    cache().join("versions").join(name.to_string())
 }

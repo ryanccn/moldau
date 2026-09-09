@@ -6,12 +6,7 @@ use clap::builder::PossibleValue;
 use eyre::{Result, WrapErr as _, bail, eyre};
 use log::{debug, warn};
 
-use std::{
-    borrow::Cow,
-    env, fmt, iter,
-    path::{self, Path},
-    str::FromStr,
-};
+use std::{borrow::Cow, env, fmt, iter, path::Path, str::FromStr};
 use tokio::{fs, task};
 
 use crate::{models::NpmPackage, util};
@@ -22,22 +17,6 @@ use super::{GithubSource, ManifestSpec, NpmVersion, PackageJson, Release, Resolu
 pub struct Spec {
     pub name: SpecName,
     pub version: SpecVersion,
-}
-
-enum SpecPathIterator<'a> {
-    Traverse(path::Ancestors<'a>),
-    NoTraverse(iter::Once<&'a Path>),
-}
-
-impl<'a> Iterator for SpecPathIterator<'a> {
-    type Item = &'a Path;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        match self {
-            Self::Traverse(it) => it.next(),
-            Self::NoTraverse(it) => it.next(),
-        }
-    }
 }
 
 #[derive(Clone, Debug)]
@@ -74,12 +53,9 @@ impl Spec {
         preferred: Option<SpecName>,
     ) -> Result<Option<ManifestSpec>> {
         let cwd = env::current_dir()?;
+        let depth = if traverse { usize::MAX } else { 1 };
 
-        for ancestor in if traverse {
-            SpecPathIterator::Traverse(cwd.ancestors())
-        } else {
-            SpecPathIterator::NoTraverse(iter::once(cwd.as_ref()))
-        } {
+        for ancestor in cwd.ancestors().take(depth) {
             let path = ancestor.join("package.json");
 
             let Ok(contents) = fs::read(&path).await else {
@@ -496,49 +472,73 @@ impl Default for SpecVersion {
     }
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct SpecVersionIntegrity {
-    algorithm: &'static aws_lc_rs::digest::Algorithm,
-    digest: Vec<u8>,
+#[derive(Debug, PartialEq, Eq)]
+pub struct IntegrityAlgorithm {
+    name: &'static str,
+    digest: &'static aws_lc_rs::digest::Algorithm,
 }
 
-static ALGORITHMS: &[(&str, &aws_lc_rs::digest::Algorithm)] = {
-    use aws_lc_rs::digest::{SHA1_FOR_LEGACY_USE_ONLY, SHA224, SHA256, SHA384, SHA512};
-
-    &[
-        ("sha512", &SHA512),
-        ("sha384", &SHA384),
-        ("sha256", &SHA256),
-        ("sha224", &SHA224),
-        ("sha1", &SHA1_FOR_LEGACY_USE_ONLY),
-    ]
+static SHA512: IntegrityAlgorithm = IntegrityAlgorithm {
+    name: "sha512",
+    digest: &aws_lc_rs::digest::SHA512,
 };
+
+static SHA384: IntegrityAlgorithm = IntegrityAlgorithm {
+    name: "sha384",
+    digest: &aws_lc_rs::digest::SHA384,
+};
+
+static SHA256: IntegrityAlgorithm = IntegrityAlgorithm {
+    name: "sha256",
+    digest: &aws_lc_rs::digest::SHA256,
+};
+
+static SHA224: IntegrityAlgorithm = IntegrityAlgorithm {
+    name: "sha224",
+    digest: &aws_lc_rs::digest::SHA224,
+};
+
+static SHA1: IntegrityAlgorithm = IntegrityAlgorithm {
+    name: "sha1",
+    digest: &aws_lc_rs::digest::SHA1_FOR_LEGACY_USE_ONLY,
+};
+
+static ALGORITHMS: &[&IntegrityAlgorithm] = &[&SHA512, &SHA384, &SHA256, &SHA224, &SHA1];
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct SpecVersionIntegrity {
+    algorithm: &'static IntegrityAlgorithm,
+    digest: Vec<u8>,
+}
 
 impl SpecVersionIntegrity {
     pub fn sha1(digest: Vec<u8>) -> Self {
         Self {
-            algorithm: &aws_lc_rs::digest::SHA1_FOR_LEGACY_USE_ONLY,
+            algorithm: &SHA1,
             digest,
         }
     }
 
     pub fn sha256(digest: Vec<u8>) -> Self {
         Self {
-            algorithm: &aws_lc_rs::digest::SHA256,
+            algorithm: &SHA256,
             digest,
         }
     }
 
     pub fn sha512(digest: Vec<u8>) -> Self {
         Self {
-            algorithm: &aws_lc_rs::digest::SHA512,
+            algorithm: &SHA512,
             digest,
         }
     }
 
     pub fn parse(s: &str) -> Result<Option<Self>> {
-        for &(name, algorithm) in ALGORITHMS {
-            if let Some(hash) = s.strip_prefix(name).and_then(|rest| rest.strip_prefix('.')) {
+        for &algorithm in ALGORITHMS {
+            if let Some(hash) = s
+                .strip_prefix(algorithm.name)
+                .and_then(|rest| rest.strip_prefix('.'))
+            {
                 return Ok(Some(Self {
                     algorithm,
                     digest: hex::decode(hash)?,
@@ -553,7 +553,7 @@ impl SpecVersionIntegrity {
         use aws_lc_rs::{constant_time::verify_slices_are_equal, digest::digest};
 
         let expected = &self.digest;
-        let actual = digest(self.algorithm, bytes);
+        let actual = digest(self.algorithm.digest, bytes);
 
         if verify_slices_are_equal(expected, actual.as_ref()).is_ok() {
             Ok(())
@@ -565,14 +565,7 @@ impl SpecVersionIntegrity {
 
 impl fmt::Display for SpecVersionIntegrity {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let Some(&(name, _)) = ALGORITHMS
-            .iter()
-            .find(|&&(_, algorithm)| algorithm == self.algorithm)
-        else {
-            return Err(fmt::Error);
-        };
-
-        write!(f, "{}.{}", name, hex::encode(&self.digest))
+        write!(f, "{}.{}", self.algorithm.name, hex::encode(&self.digest))
     }
 }
 

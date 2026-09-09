@@ -36,7 +36,7 @@ pub async fn fetch_version(
 ) -> Result<(PathBuf, HashMap<String, String>)> {
     let release = &resolution.release;
 
-    let cache_versions_dir = dirs::cache().join("versions").join(spec.name.to_string());
+    let cache_versions_dir = dirs::versions(spec.name);
     fs::create_dir_all(&cache_versions_dir).await?;
 
     let cache_dir = cache_versions_dir.join(release.version());
@@ -46,52 +46,49 @@ pub async fn fetch_version(
             "{} is already cached, not fetching",
             release.log_display::<Blue>()
         );
+    } else {
+        let unpack_dir = tempfile::Builder::new()
+            .prefix(dirs::TEMP_PREFIX)
+            .tempdir_in(dirs::cache())?;
 
-        let bin = PackageJsonBinOnly::read(&cache_dir).await?;
-        return Ok((cache_dir, bin));
-    }
+        // Unpacking into a subdirectory keeps the temporary directory itself from becoming
+        // the root that is moved into the cache.
+        let unpack_target = unpack_dir.path().join("root");
 
-    let unpack_dir = tempfile::Builder::new()
-        .prefix(dirs::TEMP_PREFIX)
-        .tempdir_in(dirs::cache())?;
+        let bytes = util::download(&release.to_string(), release.url()).await?;
 
-    // Unpacking into a subdirectory keeps the temporary directory itself from becoming
-    // the root that is moved into the cache.
-    let unpack_target = unpack_dir.path().join("root");
+        release.verify(&bytes)?;
 
-    let bytes = util::download(&release.to_string(), release.url()).await?;
+        let bytes = task::spawn_blocking({
+            let release = release.clone();
+            let unpack_target = unpack_target.clone();
 
-    release.verify(&bytes)?;
+            move || -> Result<Vec<u8>> {
+                unpack(&release, &bytes, &unpack_target)?;
+                Ok(bytes)
+            }
+        })
+        .await??;
 
-    let bytes = task::spawn_blocking({
-        let release = release.clone();
-        let unpack_target = unpack_target.clone();
+        let unpack_root = util::find_root(&unpack_target).await?;
 
-        move || -> Result<Vec<u8>> {
-            unpack(&release, &bytes, &unpack_target)?;
-            Ok(bytes)
+        spec.verify_integrity(&bytes, &unpack_root, resolution)
+            .await?;
+
+        match fs::rename(&*unpack_root, &cache_dir).await {
+            Ok(()) => {}
+
+            // Another process may have cached the same version in the meantime, in which case
+            // its entry is just as good as the one we unpacked.
+            Err(_) if fs::metadata(&cache_dir).await.is_ok() => {
+                debug!("{release} was cached concurrently, discarding the copy we fetched");
+            }
+
+            Err(err) => return Err(err.into()),
         }
-    })
-    .await??;
 
-    let unpack_root = util::find_root(&unpack_target).await?;
-
-    spec.verify_integrity(&bytes, &unpack_root, resolution)
-        .await?;
-
-    match fs::rename(&*unpack_root, &cache_dir).await {
-        Ok(()) => {}
-
-        // Another process may have cached the same version in the meantime, in which case
-        // its entry is just as good as the one we unpacked.
-        Err(_) if fs::metadata(&cache_dir).await.is_ok() => {
-            debug!("{release} was cached concurrently, discarding the copy we fetched");
-        }
-
-        Err(err) => return Err(err.into()),
+        unpack_dir.close()?;
     }
-
-    unpack_dir.close()?;
 
     let bin = PackageJsonBinOnly::read(&cache_dir).await?;
     Ok((cache_dir, bin))

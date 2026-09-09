@@ -5,15 +5,15 @@
 use std::{env, fmt, sync::LazyLock};
 
 use eyre::{Result, bail, eyre};
-use log::{debug, warn};
+use log::debug;
 use reqwest::{
-    StatusCode, Url,
+    Url,
     header::{self, HeaderMap, HeaderValue},
 };
 use serde::{Deserialize, de::DeserializeOwned};
 
 use super::{SpecVersion, SpecVersionIntegrity};
-use crate::http::HTTP;
+use crate::http;
 
 static GITHUB_API: &str = "https://api.github.com";
 
@@ -25,31 +25,17 @@ static GITHUB_HEADERS: LazyLock<HeaderMap> = LazyLock::new(|| {
         HeaderValue::from_static("application/vnd.github+json"),
     );
 
-    if let Ok(token) = env::var("GITHUB_TOKEN") {
-        match HeaderValue::try_from(format!("Bearer {token}")) {
-            Ok(mut header) => {
-                header.set_sensitive(true);
-                headers.insert(header::AUTHORIZATION, header);
-            }
-            Err(_) => {
-                warn!("`GITHUB_TOKEN` is not a valid header value, ignoring it");
-            }
-        }
+    if let Ok(token) = env::var("GITHUB_TOKEN")
+        && let Some(header) = http::sensitive_header(format!("Bearer {token}"), "`GITHUB_TOKEN`")
+    {
+        headers.insert(header::AUTHORIZATION, header);
     }
 
     headers
 });
 
 async fn fetch<T: DeserializeOwned>(url: Url) -> Result<Option<T>> {
-    debug!("fetching GitHub API: {url}");
-
-    let resp = HTTP.get(url).headers(GITHUB_HEADERS.clone()).send().await?;
-
-    if resp.status() == StatusCode::NOT_FOUND {
-        return Ok(None);
-    }
-
-    Ok(Some(resp.error_for_status()?.json().await?))
+    http::fetch_json("GitHub API", url, &GITHUB_HEADERS).await
 }
 
 #[derive(Clone, Debug)]
