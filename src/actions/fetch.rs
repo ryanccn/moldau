@@ -10,7 +10,7 @@ use std::{
 use tokio::{fs, task};
 
 use eyre::Result;
-use log::warn;
+use log::{debug, warn};
 use owo_colors::colors::Blue;
 
 use flate2::bufread::GzDecoder;
@@ -52,7 +52,7 @@ pub async fn fetch_version(
     }
 
     let unpack_dir = tempfile::Builder::new()
-        .prefix("moldau-tmp")
+        .prefix(dirs::TEMP_PREFIX)
         .tempdir_in(dirs::cache())?;
 
     // Unpacking into a subdirectory keeps the temporary directory itself from becoming
@@ -79,7 +79,18 @@ pub async fn fetch_version(
     spec.verify_integrity(&bytes, &unpack_root, resolution)
         .await?;
 
-    fs::rename(unpack_root, &cache_dir).await?;
+    match fs::rename(&*unpack_root, &cache_dir).await {
+        Ok(()) => {}
+
+        // Another process may have cached the same version in the meantime, in which case
+        // its entry is just as good as the one we unpacked.
+        Err(_) if fs::metadata(&cache_dir).await.is_ok() => {
+            debug!("{release} was cached concurrently, discarding the copy we fetched");
+        }
+
+        Err(err) => return Err(err.into()),
+    }
+
     unpack_dir.close()?;
 
     let bin = PackageJsonBinOnly::read(&cache_dir).await?;

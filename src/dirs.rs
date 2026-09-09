@@ -19,6 +19,8 @@ static STRATEGY: LazyLock<AppStrategyType> = LazyLock::new(|| {
     .unwrap()
 });
 
+pub static TEMP_PREFIX: &str = "moldau-tmp";
+
 pub fn data() -> PathBuf {
     STRATEGY.data_dir()
 }
