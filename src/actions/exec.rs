@@ -14,7 +14,7 @@ use crate::{
     util::{ExitCodeError, LogDisplay as _},
 };
 
-pub async fn exec(bin: SpecBin, args: &[OsString], spec: Option<&Spec>) -> Result<bool> {
+pub async fn exec(bin: SpecBin, args: &[OsString], spec: Option<&Spec>) -> Result<()> {
     let bin_default_spec = Spec {
         name: bin.to_name(),
         version: SpecVersion::default(),
@@ -105,5 +105,5 @@ pub async fn exec(bin: SpecBin, args: &[OsString], spec: Option<&Spec>) -> Resul
         return Err(ExitCodeError::from(code).into());
     }
 
-    Ok(true)
+    Ok(())
 }

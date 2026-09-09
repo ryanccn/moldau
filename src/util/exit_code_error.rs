@@ -7,11 +7,6 @@ use std::{error::Error, fmt, process::ExitCode};
 #[derive(Debug)]
 pub struct ExitCodeError(pub ExitCode);
 
-impl ExitCodeError {
-    pub const SUCCESS: Self = Self(ExitCode::SUCCESS);
-    pub const FAILURE: Self = Self(ExitCode::FAILURE);
-}
-
 impl From<u8> for ExitCodeError {
     fn from(value: u8) -> Self {
         Self(ExitCode::from(value))

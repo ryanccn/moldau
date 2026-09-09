@@ -23,7 +23,7 @@ mod util;
 
 use crate::{
     models::{Spec, SpecBin, SpecVersion},
-    util::{ExitCodeError, LogDisplay as _, ToExitCode as _},
+    util::{LogDisplay as _, ToExitCode as _},
 };
 
 #[derive(Parser, Clone, Debug)]
@@ -140,23 +140,15 @@ async fn main_fallible() -> Result<()> {
             .file_stem()
             .and_then(|stem| stem.to_string_lossy().parse::<SpecBin>().ok())
     }) {
-        let success = actions::exec(bin, &args.collect::<Vec<_>>(), None).await?;
-
-        if !success {
-            return Err(ExitCodeError::FAILURE.into());
-        }
-
-        return Err(ExitCodeError::SUCCESS.into());
+        actions::exec(bin, &args.collect::<Vec<_>>(), None).await?;
+        return Ok(());
     }
 
     let cli = Cli::parse();
 
     match &cli.command {
         Commands::Exec { bin, args, spec } => {
-            let success = actions::exec(*bin, &args[..], spec.as_ref()).await?;
-            if !success {
-                return Err(ExitCodeError::FAILURE.into());
-            }
+            actions::exec(*bin, &args[..], spec.as_ref()).await?;
         }
 
         Commands::Use { spec, prefetch } => {
