@@ -8,41 +8,52 @@ use std::{
 };
 use tokio::{fs, io};
 
-use eyre::Result;
+use eyre::{Result, bail};
 use log::{info, warn};
 
 use crate::models::SpecBin;
 
 #[cfg(unix)]
-async fn write_shim(dest: &Path, shim: &SpecBin, force: bool) -> Result<()> {
+fn moldau_path() -> Result<PathBuf> {
     let current_exe = env::current_exe()?.canonicalize()?;
 
-    let moldau: PathBuf;
-
+    // Linking to the name on `PATH`, when it resolves to this executable, keeps the shims
+    // working across in-place upgrades.
     if let Ok(which_result) = which::which_global("moldau")
         && which_result.canonicalize().is_ok_and(|p| p == current_exe)
     {
-        moldau = which_result;
-    } else {
-        moldau = current_exe;
+        return Ok(which_result);
     }
 
-    let shim_path = dest.join(shim.to_string());
+    Ok(current_exe)
+}
 
-    if force
-        && let Err(err) = fs::remove_file(&shim_path).await
-        && err.kind() != io::ErrorKind::NotFound
-    {
-        return Err(err.into());
-    }
+#[cfg(unix)]
+async fn write_shims(dest: &Path, force: bool) -> Result<()> {
+    let moldau = moldau_path()?;
 
-    if let Err(err) = fs::symlink(&moldau, &shim_path).await {
-        if err.kind() == io::ErrorKind::AlreadyExists {
-            if !fs::read_link(&shim_path).await.is_ok_and(|p| p == moldau) {
+    for shim in SpecBin::VARIANTS {
+        let shim_path = dest.join(shim.to_string());
+
+        if force
+            && let Err(err) = fs::remove_file(&shim_path).await
+            && err.kind() != io::ErrorKind::NotFound
+        {
+            return Err(err.into());
+        }
+
+        if let Err(err) = fs::symlink(&moldau, &shim_path).await {
+            if err.kind() != io::ErrorKind::AlreadyExists {
                 return Err(err.into());
             }
-        } else {
-            return Err(err.into());
+
+            if !fs::read_link(&shim_path).await.is_ok_and(|p| p == moldau) {
+                bail!(
+                    "{} already exists and does not point at {}; pass `--force` to overwrite it",
+                    shim_path.display(),
+                    moldau.display()
+                );
+            }
         }
     }
 
@@ -50,44 +61,53 @@ async fn write_shim(dest: &Path, shim: &SpecBin, force: bool) -> Result<()> {
 }
 
 #[cfg(windows)]
-async fn write_shim(dest: &Path, shim: &SpecBin, force: bool) -> Result<()> {
-    let shim_bash_path = dest.join(shim.to_string());
-    let shim_cmd_path = shim_bash_path.with_extension("cmd");
-
-    if force {
-        if let Err(err) = fs::remove_file(&shim_bash_path).await {
-            if err.kind() != io::ErrorKind::NotFound {
-                return Err(err.into());
-            }
-        }
-
-        if let Err(err) = fs::remove_file(&shim_cmd_path).await {
-            if err.kind() != io::ErrorKind::NotFound {
-                return Err(err.into());
-            }
-        }
+async fn write_shim_file(path: &Path, contents: &str, force: bool) -> Result<()> {
+    // `fs::write` truncates unconditionally, so an existing shim has to be checked for
+    // explicitly.
+    if !force
+        && let Ok(existing) = fs::read_to_string(path).await
+        && existing != contents
+    {
+        bail!(
+            "{} already exists and was not written by this version of moldau; pass `--force` to overwrite it",
+            path.display()
+        );
     }
 
-    fs::write(
-        shim_bash_path,
-        format!(
-            r#"#!/bin/bash
+    fs::write(path, contents).await?;
+
+    Ok(())
+}
+
+#[cfg(windows)]
+async fn write_shims(dest: &Path, force: bool) -> Result<()> {
+    for shim in SpecBin::VARIANTS {
+        let shim_bash_path = dest.join(shim.to_string());
+        let shim_cmd_path = shim_bash_path.with_extension("cmd");
+
+        write_shim_file(
+            &shim_bash_path,
+            &format!(
+                r#"#!/bin/bash
 exec moldau exec {shim} -- "$@"
 "#,
-        ),
-    )
-    .await?;
+            ),
+            force,
+        )
+        .await?;
 
-    fs::write(
-        shim_cmd_path,
-        format!(
-            r"@echo off
+        write_shim_file(
+            &shim_cmd_path,
+            &format!(
+                r"@echo off
 setlocal
 moldau exec {shim} -- %*
 "
-        ),
-    )
-    .await?;
+            ),
+            force,
+        )
+        .await?;
+    }
 
     Ok(())
 }
@@ -95,9 +115,7 @@ moldau exec {shim} -- %*
 pub async fn shims(dest: &Path, force: bool) -> Result<()> {
     fs::create_dir_all(&dest).await?;
 
-    for shim in SpecBin::VARIANTS {
-        write_shim(dest, shim, force).await?;
-    }
+    write_shims(dest, force).await?;
 
     info!("installed shims into {}", dest.display());
 
