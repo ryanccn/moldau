@@ -2,7 +2,7 @@
 //
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-use std::{collections::HashMap, fmt};
+use std::fmt;
 
 use eyre::Result;
 
@@ -28,15 +28,6 @@ impl Release {
         match self {
             Self::Npm(version) => &version.dist.tarball,
             Self::Github(asset) => &asset.url,
-        }
-    }
-
-    /// The binaries provided by this release, which is empty for standalone executables.
-    #[must_use]
-    pub fn bin(&self) -> HashMap<String, String> {
-        match self {
-            Self::Npm(version) => version.bin.clone(),
-            Self::Github(_) => HashMap::new(),
         }
     }
 

@@ -82,7 +82,8 @@ pub async fn fetch_version(
     fs::rename(unpack_root, &cache_dir).await?;
     unpack_dir.close()?;
 
-    Ok((cache_dir, release.bin()))
+    let bin = PackageJsonBinOnly::read(&cache_dir).await?;
+    Ok((cache_dir, bin))
 }
 
 pub async fn fetch_spec(spec: &Spec) -> Result<(PathBuf, HashMap<String, String>)> {

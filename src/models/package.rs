@@ -67,16 +67,40 @@ impl PackageJson {
 }
 
 #[derive(Deserialize, Clone, Debug)]
+#[serde(untagged)]
+enum PackageJsonBin {
+    Path(String),
+    Map(HashMap<String, String>),
+}
+
+#[derive(Deserialize, Clone, Debug)]
 pub struct PackageJsonBinOnly {
-    #[serde(default)]
-    pub bin: HashMap<String, String>,
+    name: Option<String>,
+    bin: Option<PackageJsonBin>,
 }
 
 impl PackageJsonBinOnly {
+    fn into_bin(self) -> HashMap<String, String> {
+        match self.bin {
+            Some(PackageJsonBin::Map(map)) => map,
+
+            Some(PackageJsonBin::Path(path)) => match self.name {
+                // A string `bin` is keyed by the package name, without its scope.
+                Some(name) => {
+                    let key = name.rsplit('/').next().unwrap_or(&name).to_owned();
+                    HashMap::from([(key, path)])
+                }
+                None => HashMap::new(),
+            },
+
+            None => HashMap::new(),
+        }
+    }
+
     /// Reads the binaries provided by a package, which is empty when there is no manifest.
     pub async fn read(dir: &Path) -> Result<HashMap<String, String>> {
         match fs::read(dir.join("package.json")).await {
-            Ok(data) => Ok(serde_json::from_slice::<Self>(&data)?.bin),
+            Ok(data) => Ok(serde_json::from_slice::<Self>(&data)?.into_bin()),
             Err(err) if err.kind() == io::ErrorKind::NotFound => Ok(HashMap::new()),
             Err(err) => Err(err.into()),
         }
