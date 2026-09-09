@@ -69,23 +69,26 @@ pub async fn exec(bin: SpecBin, args: &[OsString], spec: Option<&Spec>) -> Resul
 
     let (cache_path, bins) = super::prepare(&spec, on_fail).await?;
 
-    let status = if bins.is_empty() {
-        Command::new(cache_path.join(spec.name.standalone_bin()))
-            .args(bin.to_args())
-            .args(args)
-            .status()
-            .await?
+    let mut command = if bins.is_empty() {
+        let mut command = Command::new(cache_path.join(spec.name.standalone_bin()));
+        command.args(bin.to_args()).args(args);
+        command
     } else {
         let bin_path = bins
             .get(&bin.to_string())
             .ok_or_else(|| eyre!("could not obtain path of {bin:?} in {spec}"))?;
 
-        Command::new("node")
-            .arg(cache_path.join(bin_path))
-            .args(args)
-            .status()
-            .await?
+        let mut command = Command::new("node");
+        command.arg(cache_path.join(bin_path)).args(args);
+        command
     };
+
+    if spec.name == SpecName::Pnpm {
+        // Otherwise pnpm fetches the pinned version itself, on top of the one prepared here.
+        command.env("PNPM_CONFIG_MANAGE_PACKAGE_MANAGER_VERSIONS", "false");
+    }
+
+    let status = command.status().await?;
 
     if !status.success() {
         let code: u8 = status.code().and_then(|c| c.try_into().ok()).unwrap_or(1);
