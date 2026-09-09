@@ -26,11 +26,11 @@ fn detect_indent(s: Option<&str>) -> String {
     .unwrap_or_else(|| "  ".to_string())
 }
 
-fn detect_eol(s: Option<&str>) -> String {
+fn detect_eol(s: Option<&str>) -> &'static str {
     if s.is_some_and(|s| s.contains("\r\n")) {
-        "\r\n".to_string()
+        "\r\n"
     } else {
-        "\n".to_string()
+        "\n"
     }
 }
 
@@ -61,13 +61,14 @@ async fn write_package_json(spec: &Spec) -> Result<()> {
         detect_eol(contents.as_deref()),
     );
 
-    let mut data = match contents {
+    let mut value = match contents {
         Some(contents) => serde_json::from_str::<serde_json::Value>(&contents)?,
         None => serde_json::json!({}),
-    }
-    .as_object()
-    .ok_or_else(|| eyre!("package.json is not an object"))
-    .cloned()?;
+    };
+
+    let data = value
+        .as_object_mut()
+        .ok_or_else(|| eyre!("package.json is not an object"))?;
 
     if let Some(inner) = data
         .get_mut("devEngines")
@@ -86,9 +87,16 @@ async fn write_package_json(spec: &Spec) -> Result<()> {
         &mut writer,
         serde_json::ser::PrettyFormatter::with_indent(indent.as_bytes()),
     ))?;
-    writer.extend(eol.as_bytes());
 
-    fs::write(&package_json_path, writer).await?;
+    // The formatter always writes LF, so CRLF has to be restored afterwards. Line breaks
+    // inside strings are escaped, so they are unaffected.
+    let mut contents = String::from_utf8(writer)?;
+    if eol == "\r\n" {
+        contents = contents.replace('\n', eol);
+    }
+    contents.push_str(eol);
+
+    fs::write(&package_json_path, contents).await?;
 
     Ok(())
 }
