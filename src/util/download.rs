@@ -34,9 +34,9 @@ pub async fn download(prefix: &str, url: &str) -> Result<Vec<u8>> {
 
     bar.set_style(
         ProgressStyle::with_template(
-            r"{prefix:.green}  {bar:35.green}  {decimal_bytes}/{decimal_total_bytes}  {decimal_bytes_per_sec:.dim}"
+            r"{prefix:.green}  {bar:35.green}  {decimal_total_bytes:.green}",
         )?
-        .progress_chars(PROGRESS_CHAR)
+        .progress_chars(PROGRESS_CHAR),
     );
 
     bar.finish();

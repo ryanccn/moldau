@@ -195,6 +195,6 @@ impl GithubReleaseAsset {
 
 impl fmt::Display for GithubReleaseAsset {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}@{}", self.repo, self.version)
+        write!(f, "github:{}@{}", self.repo, self.version)
     }
 }

@@ -99,7 +99,7 @@ pub struct NpmVersion {
 
 impl fmt::Display for NpmVersion {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}@{}", self.name, self.version)
+        write!(f, "npm:{}@{}", self.name, self.version)
     }
 }
 
