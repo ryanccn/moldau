@@ -4,7 +4,7 @@
 
 use clap::builder::PossibleValue;
 use eyre::{Result, bail, eyre};
-use log::debug;
+use log::{debug, warn};
 
 use std::{
     borrow::Cow,
@@ -277,10 +277,19 @@ impl Spec {
         }
 
         let mut resolved: Option<(semver::Version, Release)> = None;
+        let mut errors = Vec::new();
 
-        for release in tasks.join_all().await {
-            let Some(release) = release? else {
-                continue;
+        for result in tasks.join_all().await {
+            let release = match result {
+                Ok(Some(release)) => release,
+                Ok(None) => continue,
+
+                // Tolerated as long as another source resolves, so that an outage or a
+                // rate limit in one registry is not fatal.
+                Err(err) => {
+                    errors.push(err);
+                    continue;
+                }
             };
 
             let version = release.version().parse::<semver::Version>()?;
@@ -294,8 +303,15 @@ impl Spec {
         }
 
         let Some((version, release)) = resolved else {
-            bail!("could not find matching version for {self}");
+            return Err(errors.into_iter().next().map_or_else(
+                || eyre!("could not find matching version for {self}"),
+                |err| err.wrap_err(format!("could not resolve {self}")),
+            ));
         };
+
+        for err in errors {
+            warn!("a source for {self} failed to resolve: {err}");
+        }
 
         Ok(match self.fetch_source(&version)? {
             Some(source) => Resolution {
@@ -414,6 +430,8 @@ impl SpecVersion {
         }
     }
 
+    /// The version without the build metadata that records the integrity, as registry
+    /// URLs and release tags do not carry it.
     pub fn to_plain_string(&self) -> String {
         match self {
             Self::Exact(version) => {
