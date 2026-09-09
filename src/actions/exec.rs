@@ -10,7 +10,7 @@ use log::error;
 use owo_colors::colors::Red;
 
 use crate::{
-    models::{Spec, SpecBin, SpecName, SpecVersion},
+    models::{OnFail, Spec, SpecBin, SpecName, SpecVersion},
     util::{ExitCodeError, LogDisplay as _},
 };
 
@@ -20,11 +20,12 @@ pub async fn exec(bin: SpecBin, args: &[OsString], spec: Option<&Spec>) -> Resul
         version: SpecVersion::default(),
     };
 
-    let mut spec = match spec {
-        Some(v) => v.to_owned(),
-        None => Spec::parse(true)
-            .await?
-            .unwrap_or_else(|| bin_default_spec.clone()),
+    let (mut spec, mut on_fail) = match spec {
+        Some(v) => (v.to_owned(), OnFail::default()),
+        None => match Spec::parse(true).await? {
+            Some(manifest) => (manifest.spec, manifest.on_fail),
+            None => (bin_default_spec.clone(), OnFail::default()),
+        },
     };
 
     if spec.name != bin_default_spec.name {
@@ -54,6 +55,7 @@ pub async fn exec(bin: SpecBin, args: &[OsString], spec: Option<&Spec>) -> Resul
 
         if disable_strict || transparent {
             spec = bin_default_spec;
+            on_fail = OnFail::default();
         } else {
             error!(
                 "{} is not available in the configured package manager {}",
@@ -65,7 +67,7 @@ pub async fn exec(bin: SpecBin, args: &[OsString], spec: Option<&Spec>) -> Resul
         }
     }
 
-    let (cache_path, bins) = super::prepare(&spec).await?;
+    let (cache_path, bins) = super::prepare(&spec, on_fail).await?;
 
     let status = if bins.is_empty() {
         Command::new(cache_path.join(spec.name.standalone_bin()))

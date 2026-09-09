@@ -168,12 +168,12 @@ async fn main_fallible() -> Result<()> {
         }
 
         Commands::Up { prefetch } => {
-            let Some(spec) = Spec::parse(false).await? else {
+            let Some(manifest) = Spec::parse(false).await? else {
                 bail!(NO_SPEC_CONFIGURED);
             };
 
             let spec = Spec {
-                name: spec.name,
+                name: manifest.spec.name,
                 version: SpecVersion::default(),
             };
 
@@ -187,9 +187,12 @@ async fn main_fallible() -> Result<()> {
         Commands::Prefetch { spec } => {
             let spec = match spec {
                 Some(spec) => spec.clone(),
-                None => Spec::parse(true)
-                    .await?
-                    .ok_or_else(|| eyre!(NO_SPEC_CONFIGURED))?,
+                None => {
+                    Spec::parse(true)
+                        .await?
+                        .ok_or_else(|| eyre!(NO_SPEC_CONFIGURED))?
+                        .spec
+                }
             };
 
             info!("prefetching package manager {}", spec.log_display::<Blue>());

@@ -9,10 +9,11 @@ use eyre::{Result, eyre};
 use log::info;
 use owo_colors::colors::Blue;
 use serde::Serialize;
+use serde_json::{Map, Value};
 
 use crate::{
     actions::fetch_version,
-    models::{Spec, SpecVersion, SpecVersionIntegrity},
+    models::{DevEnginesLocation, PackageJson, Spec, SpecVersion, SpecVersionIntegrity},
     util::LogDisplay as _,
 };
 
@@ -31,6 +32,18 @@ fn detect_eol(s: Option<&str>) -> &'static str {
         "\r\n"
     } else {
         "\n"
+    }
+}
+
+fn dev_engines_entry(
+    data: &mut Map<String, Value>,
+    location: DevEnginesLocation,
+) -> Option<&mut Map<String, Value>> {
+    let package_manager = data.get_mut("devEngines")?.get_mut("packageManager")?;
+
+    match location {
+        DevEnginesLocation::Object => package_manager.as_object_mut(),
+        DevEnginesLocation::Index(index) => package_manager.get_mut(index)?.as_object_mut(),
     }
 }
 
@@ -61,8 +74,14 @@ async fn write_package_json(spec: &Spec) -> Result<()> {
         detect_eol(contents.as_deref()),
     );
 
+    let location = contents
+        .as_deref()
+        .map(serde_json::from_str::<PackageJson>)
+        .transpose()?
+        .and_then(|manifest| manifest.dev_engines_location());
+
     let mut value = match contents {
-        Some(contents) => serde_json::from_str::<serde_json::Value>(&contents)?,
+        Some(contents) => serde_json::from_str::<Value>(&contents)?,
         None => serde_json::json!({}),
     };
 
@@ -70,14 +89,9 @@ async fn write_package_json(spec: &Spec) -> Result<()> {
         .as_object_mut()
         .ok_or_else(|| eyre!("package.json is not an object"))?;
 
-    if let Some(inner) = data
-        .get_mut("devEngines")
-        .and_then(|v| v.as_object_mut())
-        .and_then(|m| m.get_mut("packageManager"))
-        .and_then(|v| v.as_object_mut())
-    {
-        inner.insert("name".to_string(), spec.name.to_string().into());
-        inner.insert("version".to_string(), spec.version.to_string().into());
+    if let Some(entry) = location.and_then(|location| dev_engines_entry(data, location)) {
+        entry.insert("name".to_string(), spec.name.to_string().into());
+        entry.insert("version".to_string(), spec.version.to_string().into());
     } else {
         data.insert("packageManager".to_string(), spec.to_string().into());
     }

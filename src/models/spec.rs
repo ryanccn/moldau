@@ -3,7 +3,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 use clap::builder::PossibleValue;
-use eyre::{Result, bail, eyre};
+use eyre::{Result, WrapErr as _, bail, eyre};
 use log::{debug, warn};
 
 use std::{
@@ -16,7 +16,7 @@ use tokio::{fs, task};
 
 use crate::{models::NpmPackage, util};
 
-use super::{GithubSource, NpmVersion, PackageJson, Release, Resolution};
+use super::{GithubSource, ManifestSpec, NpmVersion, PackageJson, Release, Resolution};
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Spec {
@@ -67,7 +67,7 @@ impl SpecSource {
 }
 
 impl Spec {
-    pub async fn parse(traverse: bool) -> Result<Option<Self>> {
+    pub async fn parse(traverse: bool) -> Result<Option<ManifestSpec>> {
         let cwd = env::current_dir()?;
 
         for ancestor in if traverse {
@@ -75,14 +75,25 @@ impl Spec {
         } else {
             SpecPathIterator::NoTraverse(iter::once(cwd.as_ref()))
         } {
-            if let Some(data) = fs::read(ancestor.join("package.json"))
-                .await
-                .ok()
-                .and_then(|d| serde_json::from_slice::<PackageJson>(&d).ok())
-                && let Some(spec) = data.spec()?
-            {
-                debug!("parsed spec from {}: {spec}", ancestor.display());
-                return Ok(Some(spec));
+            let path = ancestor.join("package.json");
+
+            let Ok(contents) = fs::read(&path).await else {
+                continue;
+            };
+
+            // A file that does not hold JSON is not a manifest, but one that does is read
+            // strictly.
+            if serde_json::from_slice::<serde::de::IgnoredAny>(&contents).is_err() {
+                debug!("skipping {}", path.display());
+                continue;
+            }
+
+            let data = serde_json::from_slice::<PackageJson>(&contents)
+                .wrap_err_with(|| format!("could not parse {}", path.display()))?;
+
+            if let Some(manifest) = data.spec()? {
+                debug!("parsed spec from {}: {}", path.display(), manifest.spec);
+                return Ok(Some(manifest));
             }
         }
 
