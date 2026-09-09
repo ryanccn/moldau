@@ -67,7 +67,12 @@ impl SpecSource {
 }
 
 impl Spec {
-    pub async fn parse(traverse: bool) -> Result<Option<ManifestSpec>> {
+    /// Reads the specification a manifest declares. `preferred` is the package manager
+    /// being run, which a `devEngines.packageManager` list is read in favour of.
+    pub async fn parse(
+        traverse: bool,
+        preferred: Option<SpecName>,
+    ) -> Result<Option<ManifestSpec>> {
         let cwd = env::current_dir()?;
 
         for ancestor in if traverse {
@@ -91,7 +96,7 @@ impl Spec {
             let data = serde_json::from_slice::<PackageJson>(&contents)
                 .wrap_err_with(|| format!("could not parse {}", path.display()))?;
 
-            if let Some(manifest) = data.spec()? {
+            if let Some(manifest) = data.spec(preferred)? {
                 debug!("parsed spec from {}: {}", path.display(), manifest.spec);
                 return Ok(Some(manifest));
             }

@@ -78,7 +78,7 @@ async fn write_package_json(spec: &Spec) -> Result<()> {
         .as_deref()
         .map(serde_json::from_str::<PackageJson>)
         .transpose()?
-        .and_then(|manifest| manifest.dev_engines_location());
+        .and_then(|manifest| manifest.dev_engines_location(Some(spec.name)));
 
     let mut value = match contents {
         Some(contents) => serde_json::from_str::<Value>(&contents)?,

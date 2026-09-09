@@ -168,7 +168,7 @@ async fn main_fallible() -> Result<()> {
         }
 
         Commands::Up { prefetch } => {
-            let Some(manifest) = Spec::parse(false).await? else {
+            let Some(manifest) = Spec::parse(false, None).await? else {
                 bail!(NO_SPEC_CONFIGURED);
             };
 
@@ -188,7 +188,7 @@ async fn main_fallible() -> Result<()> {
             let spec = match spec {
                 Some(spec) => spec.clone(),
                 None => {
-                    Spec::parse(true)
+                    Spec::parse(true, None)
                         .await?
                         .ok_or_else(|| eyre!(NO_SPEC_CONFIGURED))?
                         .spec

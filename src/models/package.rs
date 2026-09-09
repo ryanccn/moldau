@@ -37,7 +37,7 @@ pub enum OnFail {
     Download,
     Warn,
     Error,
-    /// Leaves the entry to whichever one follows it.
+    /// Asks for the mismatch to go unreported, so it fetches as [`OnFail::Download`] does.
     Ignore,
 }
 
@@ -80,36 +80,45 @@ impl DevEnginesPackageManager {
             .map_or_else(OnFail::default, OnFail::parse)
     }
 
-    fn is_selectable(&self) -> bool {
-        self.on_fail() != OnFail::Ignore && self.name.parse::<SpecName>().is_ok()
+    /// The package manager this entry names, when it is one that is supported.
+    fn spec_name(&self) -> Option<SpecName> {
+        self.name.parse().ok()
     }
 }
 
 impl PackageJson {
-    fn selected_dev_engines(&self) -> Option<(DevEnginesLocation, &DevEnginesPackageManager)> {
+    /// The entry that stands for the project, out of those naming a supported package
+    /// manager. The entries of a list are alternatives, so the one naming `preferred` — the
+    /// package manager being run — is taken over the first.
+    fn selected_dev_engines(
+        &self,
+        preferred: Option<SpecName>,
+    ) -> Option<(DevEnginesLocation, &DevEnginesPackageManager)> {
         let package_manager = self.dev_engines.as_ref()?.package_manager.as_ref()?;
 
         match package_manager {
             DevEnginesPackageManagers::One(entry) => entry
-                .is_selectable()
+                .spec_name()
+                .is_some()
                 .then_some((DevEnginesLocation::Object, entry)),
 
             DevEnginesPackageManagers::Many(entries) => entries
                 .iter()
-                .enumerate()
-                .find(|(_, entry)| entry.is_selectable())
-                .map(|(index, entry)| (DevEnginesLocation::Index(index), entry)),
+                .position(|entry| preferred.is_some_and(|name| entry.spec_name() == Some(name)))
+                .or_else(|| entries.iter().position(|entry| entry.spec_name().is_some()))
+                .map(|index| (DevEnginesLocation::Index(index), &entries[index])),
         }
     }
 
     #[must_use]
-    pub fn dev_engines_location(&self) -> Option<DevEnginesLocation> {
-        self.selected_dev_engines().map(|(location, _)| location)
+    pub fn dev_engines_location(&self, preferred: Option<SpecName>) -> Option<DevEnginesLocation> {
+        self.selected_dev_engines(preferred)
+            .map(|(location, _)| location)
     }
 
-    pub fn spec(&self) -> Result<Option<ManifestSpec>> {
+    pub fn spec(&self, preferred: Option<SpecName>) -> Result<Option<ManifestSpec>> {
         // `devEngines.packageManager` is what is written back when present, so it is read first.
-        if let Some((_, entry)) = self.selected_dev_engines() {
+        if let Some((_, entry)) = self.selected_dev_engines(preferred) {
             let version = match &entry.version {
                 Some(version) => version.parse()?,
                 None => SpecVersion::default(),
@@ -195,13 +204,19 @@ mod tests {
         serde_json::from_value(manifest).expect("deserialize the manifest")
     }
 
+    fn spec_of_running(manifest: Value, preferred: Option<SpecName>) -> Option<ManifestSpec> {
+        parse(manifest)
+            .spec(preferred)
+            .expect("read the specification")
+    }
+
     fn spec_of(manifest: Value) -> Option<ManifestSpec> {
-        parse(manifest).spec().expect("read the specification")
+        spec_of_running(manifest, None)
     }
 
     fn error_of(manifest: Value) -> String {
         parse(manifest)
-            .spec()
+            .spec(None)
             .expect_err("the specification should be rejected")
             .to_string()
     }
@@ -231,22 +246,32 @@ mod tests {
     }
 
     #[test]
-    fn the_first_usable_entry_of_a_list_is_read() {
-        let manifest = spec_of(json!({
+    fn a_list_is_read_in_favour_of_the_running_package_manager() {
+        let manifest = json!({
             "devEngines": {
                 "packageManager": [
+                    { "name": "deno", "version": "2.0.0" },
                     { "name": "pnpm", "version": "10.0.0" },
                     { "name": "yarn", "version": "4.5.0" },
                 ],
             },
-        }))
-        .expect("the manifest declares a package manager");
+        });
 
-        assert_eq!(manifest.spec.to_string(), "pnpm@10.0.0");
+        for (preferred, expected) in [
+            (None, "pnpm@10.0.0"),
+            (Some(SpecName::Yarn), "yarn@4.5.0"),
+            (Some(SpecName::Npm), "pnpm@10.0.0"),
+        ] {
+            let spec = spec_of_running(manifest.clone(), preferred)
+                .expect("the manifest declares a package manager")
+                .spec;
+
+            assert_eq!(spec.to_string(), expected, "running: {preferred:?}");
+        }
     }
 
     #[test]
-    fn an_ignored_entry_is_passed_over() {
+    fn an_ignored_entry_is_read_like_any_other() {
         let manifest = spec_of(json!({
             "devEngines": {
                 "packageManager": [
@@ -257,22 +282,17 @@ mod tests {
         }))
         .expect("the manifest declares a package manager");
 
-        assert_eq!(manifest.spec.to_string(), "yarn@4.5.0");
-    }
+        assert_eq!(manifest.spec.to_string(), "pnpm@10.0.0");
+        assert_eq!(manifest.on_fail, OnFail::Ignore);
 
-    #[test]
-    fn an_entry_naming_an_unknown_package_manager_is_passed_over() {
         let manifest = spec_of(json!({
             "devEngines": {
-                "packageManager": [
-                    { "name": "deno", "version": "2.0.0" },
-                    { "name": "bun", "version": "1.2.0" },
-                ],
+                "packageManager": { "name": "pnpm", "version": "10.0.0", "onFail": "ignore" },
             },
         }))
         .expect("the manifest declares a package manager");
 
-        assert_eq!(manifest.spec.to_string(), "bun@1.2.0");
+        assert_eq!(manifest.spec.to_string(), "pnpm@10.0.0");
     }
 
     #[test]
@@ -280,7 +300,7 @@ mod tests {
         let manifest = spec_of(json!({
             "packageManager": "npm@11.0.0",
             "devEngines": {
-                "packageManager": [{ "name": "pnpm", "version": "10.0.0", "onFail": "ignore" }],
+                "packageManager": [{ "name": "deno", "version": "2.0.0" }],
             },
         }))
         .expect("the manifest declares a package manager");
@@ -341,45 +361,51 @@ mod tests {
         let manifest = parse(json!({
             "devEngines": {
                 "packageManager": [
-                    { "name": "pnpm", "version": "10.0.0", "onFail": "ignore" },
                     { "name": "deno", "version": "2.0.0" },
+                    { "name": "pnpm", "version": "10.0.0" },
                     { "name": "yarn", "version": "4.5.0" },
                 ],
             },
         }));
 
-        assert_eq!(
-            manifest.dev_engines_location(),
-            Some(DevEnginesLocation::Index(2))
-        );
-        assert_eq!(
-            manifest
-                .spec()
-                .expect("read the specification")
-                .expect("the manifest declares a package manager")
-                .spec
-                .to_string(),
-            "yarn@4.5.0"
-        );
+        for (preferred, location, spec) in [
+            (None, DevEnginesLocation::Index(1), "pnpm@10.0.0"),
+            (
+                Some(SpecName::Yarn),
+                DevEnginesLocation::Index(2),
+                "yarn@4.5.0",
+            ),
+        ] {
+            assert_eq!(manifest.dev_engines_location(preferred), Some(location));
+            assert_eq!(
+                manifest
+                    .spec(preferred)
+                    .expect("read the specification")
+                    .expect("the manifest declares a package manager")
+                    .spec
+                    .to_string(),
+                spec
+            );
+        }
 
         let manifest = parse(json!({
             "devEngines": { "packageManager": { "name": "pnpm", "version": "10.0.0" } },
         }));
 
         assert_eq!(
-            manifest.dev_engines_location(),
+            manifest.dev_engines_location(Some(SpecName::Yarn)),
             Some(DevEnginesLocation::Object)
         );
     }
 
     #[test]
     fn no_entry_is_located_when_none_is_read() {
-        let located = |manifest| parse(manifest).dev_engines_location();
+        let located = |manifest| parse(manifest).dev_engines_location(None);
 
         assert!(
             located(json!({
                 "devEngines": {
-                    "packageManager": [{ "name": "pnpm", "version": "10.0.0", "onFail": "ignore" }],
+                    "packageManager": [{ "name": "deno", "version": "2.0.0" }],
                 },
             }))
             .is_none()

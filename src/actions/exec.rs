@@ -22,7 +22,7 @@ pub async fn exec(bin: SpecBin, args: &[OsString], spec: Option<&Spec>) -> Resul
 
     let (mut spec, mut on_fail) = match spec {
         Some(v) => (v.to_owned(), OnFail::default()),
-        None => match Spec::parse(true).await? {
+        None => match Spec::parse(true, Some(bin_default_spec.name)).await? {
             Some(manifest) => (manifest.spec, manifest.on_fail),
             None => (bin_default_spec.clone(), OnFail::default()),
         },
