@@ -331,11 +331,7 @@ impl Spec {
 
 impl fmt::Display for Spec {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        if f.alternate() {
-            write!(f, "{}@{:#}", self.name, self.version)
-        } else {
-            write!(f, "{}@{}", self.name, self.version)
-        }
+        write!(f, "{}@{}", self.name, self.version)
     }
 }
 
@@ -454,11 +450,11 @@ impl SpecVersion {
 
 impl fmt::Display for SpecVersion {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str(&match self {
-            Self::Exact(version) => version.to_string(),
-            Self::SemverReq(req) => req.to_string(),
-            Self::DistTag(tag) => tag.clone(),
-        })
+        match self {
+            Self::Exact(version) => version.fmt(f),
+            Self::SemverReq(req) => req.fmt(f),
+            Self::DistTag(tag) => f.write_str(tag),
+        }
     }
 }
 

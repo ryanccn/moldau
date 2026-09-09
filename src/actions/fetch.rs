@@ -10,7 +10,7 @@ use std::{
 use tokio::{fs, task};
 
 use eyre::Result;
-use log::{debug, warn};
+use log::{debug, info};
 use owo_colors::colors::Blue;
 
 use flate2::bufread::GzDecoder;
@@ -42,8 +42,8 @@ pub async fn fetch_version(
     let cache_dir = cache_versions_dir.join(release.version());
 
     if fs::metadata(&cache_dir).await.is_ok() {
-        warn!(
-            "{:#} is already cached, not fetching",
+        info!(
+            "{} is already cached, not fetching",
             release.log_display::<Blue>()
         );
 

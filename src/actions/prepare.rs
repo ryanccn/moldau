@@ -9,7 +9,7 @@ use std::{
 use tokio::fs;
 
 use eyre::Result;
-use log::warn;
+use log::info;
 use owo_colors::colors::Blue;
 
 use crate::{
@@ -51,8 +51,7 @@ pub async fn prepare(spec: &Spec) -> Result<(PathBuf, HashMap<String, String>)> 
         return Ok((cache_dir, bin));
     }
 
-    warn!("fetching package manager {}", spec.log_display::<Blue>());
+    info!("fetching package manager {}", spec.log_display::<Blue>());
 
-    let outcome = fetch_spec(spec).await?;
-    Ok(outcome)
+    fetch_spec(spec).await
 }

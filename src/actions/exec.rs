@@ -56,7 +56,7 @@ pub async fn exec(bin: SpecBin, args: &[OsString], spec: Option<&Spec>) -> Resul
             spec = bin_default_spec;
         } else {
             error!(
-                "{} is not available in the configured package manager {:#}",
+                "{} is not available in the configured package manager {}",
                 bin.log_display::<Red>(),
                 spec.log_display::<Red>()
             );

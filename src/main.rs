@@ -2,7 +2,7 @@
 //
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-use eyre::{Result, bail};
+use eyre::{Result, bail, eyre};
 use std::{
     env,
     ffi::OsString,
@@ -103,18 +103,30 @@ enum Commands {
     },
 }
 
+static NO_SPEC_CONFIGURED: &str = "no `packageManager` or `devEngines.packageManager` configured!";
+
 async fn main_fallible() -> Result<()> {
     env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("moldau=info"))
         .format(|buf, record| {
             let level_style = buf.default_level_style(record.level());
+            let level = record.level().as_str().to_lowercase();
+
+            let target = format!(
+                "{}:",
+                if record.target().starts_with("moldau::") {
+                    "moldau"
+                } else {
+                    record.target()
+                }
+            );
+
             writeln!(
                 buf,
-                "{}{}{}{:#}{} {}",
-                "[".dimmed(),
+                "{}{}{:<5}{:#}  {}",
+                target.dimmed(),
                 level_style,
-                record.level(),
+                level,
                 level_style,
-                "]".dimmed(),
                 record.args()
             )
         })
@@ -157,7 +169,7 @@ async fn main_fallible() -> Result<()> {
 
         Commands::Up { prefetch } => {
             let Some(spec) = Spec::parse(false).await? else {
-                bail!("no `packageManager` or `devEngines.packageManager` configured!");
+                bail!(NO_SPEC_CONFIGURED);
             };
 
             let spec = Spec {
@@ -174,16 +186,15 @@ async fn main_fallible() -> Result<()> {
 
         Commands::Prefetch { spec } => {
             let spec = match spec {
-                Some(spec) => spec,
-                None => &match Spec::parse(true).await? {
-                    Some(spec) => spec,
-                    None => bail!("no `packageManager` or `devEngines.packageManager` configured!"),
-                },
+                Some(spec) => spec.clone(),
+                None => Spec::parse(true)
+                    .await?
+                    .ok_or_else(|| eyre!(NO_SPEC_CONFIGURED))?,
             };
 
             info!("prefetching package manager {}", spec.log_display::<Blue>());
 
-            actions::fetch_spec(spec).await?;
+            actions::fetch_spec(&spec).await?;
         }
 
         Commands::Shims { dest, force } => {
