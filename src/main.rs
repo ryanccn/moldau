@@ -148,7 +148,7 @@ async fn main_fallible() -> Result<()> {
 
     match &cli.command {
         Commands::Exec { bin, args, spec } => {
-            actions::exec(*bin, &args[..], spec.as_ref()).await?;
+            actions::exec(*bin, args, spec.as_ref()).await?;
         }
 
         Commands::Use { spec, prefetch } => {

@@ -75,7 +75,7 @@ pub async fn fetch_version(
         spec.verify_integrity(&bytes, &unpack_root, resolution)
             .await?;
 
-        match fs::rename(&*unpack_root, &cache_dir).await {
+        match fs::rename(unpack_root, &cache_dir).await {
             Ok(()) => {}
 
             // Another process may have cached the same version in the meantime, in which case
