@@ -125,8 +125,11 @@ impl PackageJson {
                 None => SpecVersion::default(),
             };
 
-            if !version.is_exact() {
-                bail!("`devEngines.packageManager` specified in package.json must be exact");
+            if version.is_dist_tag() {
+                bail!(
+                    "`devEngines.packageManager` specified in package.json must be an exact version or a semver range, not {:?}",
+                    entry.version.as_deref().unwrap_or_default(),
+                );
             }
 
             return Ok(Some(ManifestSpec {
@@ -335,14 +338,74 @@ mod tests {
     }
 
     #[test]
-    fn an_inexact_version_is_rejected() {
+    fn an_inexact_package_manager_field_is_rejected() {
         assert!(error_of(json!({ "packageManager": "pnpm@^10" })).contains("must be exact"));
-        assert!(
-            error_of(json!({
-                "devEngines": { "packageManager": { "name": "pnpm", "version": "^10" } },
+    }
+
+    #[test]
+    fn a_range_in_dev_engines_is_read_as_a_range() {
+        for (declared, expected) in [
+            ("^10", "pnpm@^10"),
+            ("~10.1", "pnpm@~10.1"),
+            (">=10", "pnpm@>=10"),
+            ("10.x", "pnpm@10.*"),
+            ("*", "pnpm@*"),
+        ] {
+            let manifest = spec_of(json!({
+                "devEngines": { "packageManager": { "name": "pnpm", "version": declared } },
             }))
-            .contains("must be exact")
-        );
+            .expect("the manifest declares a package manager");
+
+            assert_eq!(manifest.spec.to_string(), expected, "declared: {declared}");
+        }
+    }
+
+    #[test]
+    fn an_exact_version_in_dev_engines_stays_exact() {
+        let manifest = spec_of(json!({
+            "devEngines": { "packageManager": { "name": "pnpm", "version": "10.0.0" } },
+        }))
+        .expect("the manifest declares a package manager");
+
+        assert_eq!(manifest.spec.to_string(), "pnpm@10.0.0");
+        assert!(manifest.spec.version.is_exact());
+    }
+
+    #[test]
+    fn a_dev_engines_entry_without_a_version_is_read_as_any_version() {
+        let manifest = spec_of(json!({
+            "devEngines": { "packageManager": { "name": "pnpm" } },
+        }))
+        .expect("the manifest declares a package manager");
+
+        assert_eq!(manifest.spec.to_string(), "pnpm@*");
+    }
+
+    #[test]
+    fn a_version_that_is_neither_exact_nor_a_range_is_rejected() {
+        for declared in ["latest", ">=10 <12", "10 || 11", "10 - 11"] {
+            let error = error_of(json!({
+                "devEngines": { "packageManager": { "name": "pnpm", "version": declared } },
+            }));
+
+            assert!(
+                error.contains("must be an exact version or a semver range"),
+                "declared: {declared}, error: {error}"
+            );
+        }
+    }
+
+    #[test]
+    fn on_fail_is_read_alongside_a_range() {
+        let manifest = spec_of(json!({
+            "devEngines": {
+                "packageManager": { "name": "pnpm", "version": "^10", "onFail": "warn" },
+            },
+        }))
+        .expect("the manifest declares a package manager");
+
+        assert_eq!(manifest.spec.to_string(), "pnpm@^10");
+        assert_eq!(manifest.on_fail, OnFail::Warn);
     }
 
     #[test]
