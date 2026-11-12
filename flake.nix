@@ -13,5 +13,12 @@
     ferrix.lib.mkFlake inputs {
       root = ./.;
       completions.enable = true;
+
+      buildInputs = pkgs: [
+        pkgs.zstd
+        pkgs.aws-lc
+      ];
+
+      nativeBuildInputs = pkgs: pkgs.lib.optional pkgs.stdenv.buildPlatform.isDarwin pkgs.pkg-config;
     };
 }
