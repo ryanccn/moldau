@@ -13,5 +13,7 @@
     ferrix.lib.mkFlake inputs {
       root = ./.;
       completions.enable = true;
+
+      env.dontCargoUseSystemLibs = "1";
     };
 }
