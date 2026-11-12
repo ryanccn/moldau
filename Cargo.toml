@@ -35,7 +35,7 @@ tar = "0.4.46"
 tempfile = "3.27.0"
 tokio = { version = "1.53.1", features = ["full"] }
 which = "8.0.6"
-zip = "8.6.0"
+zip = "9.0.5"
 
 [lints.clippy]
 all = { level = "warn", priority = -1 }
