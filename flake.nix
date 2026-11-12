@@ -19,6 +19,8 @@
         pkgs.aws-lc
       ];
 
-      nativeBuildInputs = pkgs: pkgs.lib.optional pkgs.stdenv.buildPlatform.isDarwin pkgs.pkg-config;
+      nativeBuildInputs = pkgs: [
+        pkgs.pkg-config
+      ];
     };
 }
