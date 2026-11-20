@@ -60,7 +60,7 @@ jobs:
         if: ${{ inputs.disable-cache != true }}
 
       - name: Install cargo-auditable
-        uses: taiki-e/install-action@5488ac5a951645ce95062214902ac4b6bc1a1037 # ratchet:taiki-e/install-action@v2
+        uses: taiki-e/install-action@ab49d3c64680143e184118bed66a46419fc15519 # ratchet:taiki-e/install-action@v2
         with:
           tool: cargo-auditable
 
@@ -112,7 +112,7 @@ jobs:
           persist-credentials: false
 
       - name: Install Nix
-        uses: cachix/install-nix-action@75c75c31ebece974e48ebc36b4ad125bd97bd97b # ratchet:cachix/install-nix-action@v31.11.3
+        uses: cachix/install-nix-action@3dc140bfc76c49fbd4dd958429132e3746bcb086 # ratchet:cachix/install-nix-action@v31.11.5
 
       - name: Build
         run: nix build --fallback --print-build-logs '.#moldau-static-${{ matrix.target }}'
